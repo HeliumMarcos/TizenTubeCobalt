@@ -491,7 +491,33 @@ public class MediaCodecUtil {
               mimeType,
               isSoftwareDecoder(codecInfo));
         }
-        codecCapabilityInfos.add(new CodecCapabilityInfo(codecInfo, mimeType));
+        CodecCapabilityInfo capabilityInfo = new CodecCapabilityInfo(codecInfo, mimeType);
+        if (mimeType.startsWith("video/")) {
+          MediaCodecInfo.VideoCapabilities videoCapabilities =
+              capabilityInfo.getVideoCapabilities();
+          if (videoCapabilities != null) {
+            Log.v(
+                TAG,
+                "L1 video support: name=%s mime=%s 2160p30=%s 2160p60=%s hdr=%s",
+                name,
+                mimeType,
+                videoCapabilities.areSizeAndRateSupported(3840, 2160, 30),
+                videoCapabilities.areSizeAndRateSupported(3840, 2160, 60),
+                capabilityInfo.isHdrCapable());
+          }
+        } else if (mimeType.startsWith("audio/")) {
+          MediaCodecInfo.AudioCapabilities audioCapabilities =
+              capabilityInfo.getAudioCapabilities();
+          if (audioCapabilities != null) {
+            Log.v(
+                TAG,
+                "L1 audio decode support: name=%s mime=%s maxInputChannels=%d",
+                name,
+                mimeType,
+                audioCapabilities.getMaxInputChannelCount());
+          }
+        }
+        codecCapabilityInfos.add(capabilityInfo);
       }
     }
     CodecCapabilityInfo[] array = new CodecCapabilityInfo[codecCapabilityInfos.size()];
