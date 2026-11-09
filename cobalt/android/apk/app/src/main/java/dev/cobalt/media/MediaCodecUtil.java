@@ -502,6 +502,21 @@ public class MediaCodecUtil {
           continue;
         }
         if (mimeType.startsWith("video/")) {
+          // Report advertised profile/level pairs separately from size/rate support.
+          // HDR formats often require a particular profile even when 2160p60 is supported.
+          try {
+            for (CodecProfileLevel profileLevel : capabilityInfo.getCodecCapabilities().profileLevels) {
+              Log.v(
+                  TAG,
+                  "L1 video profile: name=%s mime=%s profile=%d level=%d",
+                  name,
+                  mimeType,
+                  profileLevel.profile,
+                  profileLevel.level);
+            }
+          } catch (IllegalArgumentException | IllegalStateException e) {
+            Log.w(TAG, "L1 video profiles unavailable: %s (%s): %s", name, mimeType, e);
+          }
           MediaCodecInfo.VideoCapabilities videoCapabilities =
               capabilityInfo.getVideoCapabilities();
           if (videoCapabilities != null) {
