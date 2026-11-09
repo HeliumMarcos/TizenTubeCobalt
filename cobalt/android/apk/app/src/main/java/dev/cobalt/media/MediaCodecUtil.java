@@ -481,7 +481,43 @@ public class MediaCodecUtil {
       }
 
       for (String mimeType : codecInfo.getSupportedTypes()) {
-        codecCapabilityInfos.add(new CodecCapabilityInfo(codecInfo, mimeType));
+        // L1 diagnostics: report the codecs exposed to Cobalt before quality selection.
+        // Keep this at verbose level to avoid flooding normal playback logs.
+        if (mimeType.startsWith("video/") || mimeType.startsWith("audio/")) {
+          Log.v(
+              TAG,
+              "L1 codec capability: name=%s mime=%s software=%s",
+              name,
+              mimeType,
+              isSoftwareDecoder(codecInfo));
+        }
+        CodecCapabilityInfo capabilityInfo = new CodecCapabilityInfo(codecInfo, mimeType);
+        if (mimeType.startsWith("video/")) {
+          MediaCodecInfo.VideoCapabilities videoCapabilities =
+              capabilityInfo.getVideoCapabilities();
+          if (videoCapabilities != null) {
+            Log.v(
+                TAG,
+                "L1 video support: name=%s mime=%s 2160p30=%s 2160p60=%s hdr=%s",
+                name,
+                mimeType,
+                videoCapabilities.areSizeAndRateSupported(3840, 2160, 30),
+                videoCapabilities.areSizeAndRateSupported(3840, 2160, 60),
+                capabilityInfo.isHdrCapable());
+          }
+        } else if (mimeType.startsWith("audio/")) {
+          MediaCodecInfo.AudioCapabilities audioCapabilities =
+              capabilityInfo.getAudioCapabilities();
+          if (audioCapabilities != null) {
+            Log.v(
+                TAG,
+                "L1 audio decode support: name=%s mime=%s maxInputChannels=%d",
+                name,
+                mimeType,
+                audioCapabilities.getMaxInputChannelCount());
+          }
+        }
+        codecCapabilityInfos.add(capabilityInfo);
       }
     }
     CodecCapabilityInfo[] array = new CodecCapabilityInfo[codecCapabilityInfos.size()];
