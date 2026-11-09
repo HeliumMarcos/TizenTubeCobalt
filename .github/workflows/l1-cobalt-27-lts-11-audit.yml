@@ -1,6 +1,11 @@
 name: Audit Cobalt 27.lts.11 migration
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/l1-cobalt-27-lts-11-audit.yml'
+      - 'cobalt/**'
+      - 'starboard/**'
   workflow_dispatch:
 
 permissions:
@@ -13,23 +18,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
-      - name: Fetch official Cobalt 27.lts.11 tag
+      - name: Fetch official Cobalt LTS tags
         run: |
           set -euo pipefail
           git remote add cobalt-official https://github.com/youtube/cobalt.git
-          git fetch --no-tags --filter=blob:none cobalt-official refs/tags/27.lts.11:refs/tags/l1-official-27.lts.11
+          git -c protocol.version=2 fetch --no-tags --filter=blob:none cobalt-official \
+            refs/tags/27.lts.10:refs/tags/l1-official-27.lts.10 \
+            refs/tags/27.lts.11:refs/tags/l1-official-27.lts.11
       - name: Generate migration impact report
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p migration-report
-          printf 'Fork HEAD: %s\nOfficial tag: %s\n' "$(git rev-parse HEAD)" "$(git rev-parse refs/tags/l1-official-27.lts.11)" > migration-report/summary.txt
-          git diff --stat HEAD refs/tags/l1-official-27.lts.11 -- cobalt starboard > migration-report/engine-diff-stat.txt || true
-          git diff --name-status HEAD refs/tags/l1-official-27.lts.11 -- cobalt starboard > migration-report/engine-changed-paths.txt || true
-          git diff HEAD refs/tags/l1-official-27.lts.11 -- cobalt/version.h > migration-report/version-diff.patch || true
-          echo 'This is a read-only audit. It does NOT update the Cobalt engine.' >> migration-report/summary.txt
+          BASE=refs/tags/l1-official-27.lts.10
+          TARGET=refs/tags/l1-official-27.lts.11
+          {
+            printf 'Fork HEAD: %s\n' "$(git rev-parse HEAD)"
+            printf 'Official 27.lts.10: %s\n' "$(git rev-parse "$BASE")"
+            printf 'Official 27.lts.11: %s\n' "$(git rev-parse "$TARGET")"
+            echo 'Read-only comparison; no Cobalt engine files are updated.'
+          } > migration-report/summary.txt
+          git diff --stat "$BASE" "$TARGET" -- cobalt starboard > migration-report/upstream-engine-diff-stat.txt
+          git diff --name-status "$BASE" "$TARGET" -- cobalt starboard > migration-report/upstream-engine-changed-paths.txt
+          git diff --name-status HEAD "$BASE" -- cobalt starboard > migration-report/fork-vs-official-27-lts-10.txt
+          git diff --name-status HEAD "$TARGET" -- cobalt starboard > migration-report/fork-vs-official-27-lts-11.txt
+          git diff "$BASE" "$TARGET" -- cobalt/version.h > migration-report/upstream-version.patch
+          grep -Ei 'codec|audio|video|exo|media|starboard' migration-report/upstream-engine-changed-paths.txt > migration-report/media-changed-paths.txt || true
       - uses: actions/upload-artifact@v4
         with:
           name: cobalt-27-lts-11-migration-audit
