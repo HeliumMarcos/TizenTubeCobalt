@@ -54,7 +54,7 @@ public class StarboardBridge extends BaseStarboardBridge {
       String[] args,
       String startDeepLink) {
     super(appContext, activityHolder, serviceHolder, args, startDeepLink);
-    mCobaltMediaSession = new CobaltMediaSession(appContext, activityHolder, artworkDownloader);
+    mCobaltMediaSession = new CobaltMediaSession(appContext, artworkDownloader);
     mVolumeStateReceiver = new VolumeStateReceiver(appContext);
   }
 
@@ -117,11 +117,22 @@ public class StarboardBridge extends BaseStarboardBridge {
 
   @Override
   protected void hideSplashScreen() {
+    PlatformError platformError = mPlatformError;
     mPlatformError = null;
+    if (platformError != null && platformError.isDismissButtonDisabled()) {
+      platformError.dismiss();
+    }
     if (mActivityHolder.get() instanceof CobaltActivity activity) {
       activity.onSplashScreenHidden();
     }
     StartupGuard.getInstance().disarm();
+  }
+
+  @Override
+  protected void onPrimaryMainFrameNavigationStarted() {
+    if (mActivityHolder.get() instanceof CobaltActivity activity) {
+      activity.onPrimaryMainFrameNavigationStarted();
+    }
   }
 
   @Override

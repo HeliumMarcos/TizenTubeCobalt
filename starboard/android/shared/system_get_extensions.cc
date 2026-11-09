@@ -36,12 +36,14 @@
 #include "starboard/extension/graphics.h"
 #include "starboard/extension/loader_app_metrics.h"
 #include "starboard/extension/media_session.h"
+#include "starboard/extension/native_stability.h"
 #include "starboard/extension/platform_info.h"
 #include "starboard/extension/platform_service.h"
 #include "starboard/extension/player_settings.h"
 #include "starboard/extension/system_info.h"
 #include "starboard/shared/starboard/experimental_features.h"
 #include "starboard/shared/starboard/loader_app_metrics.h"
+#include "starboard/shared/starboard/native_stability.h"
 
 const void* SbSystemGetExtension(const char* name) {
 #if BUILDFLAG(IS_STARBOARD)
@@ -80,6 +82,9 @@ const void* SbSystemGetExtension(const char* name) {
   if (strcmp(name, kCobaltExtensionCrashHandlerName) == 0) {
     return starboard::GetCrashHandlerApi();
   }
+  if (strcmp(name, kStarboardExtensionNativeStabilityName) == 0) {
+    return starboard::GetNativeStabilityApi();
+  }
   if (strcmp(name, kCobaltExtensionPlatformInfoName) == 0) {
     return starboard::GetPlatformInfoApi();
   }
@@ -91,9 +96,7 @@ const void* SbSystemGetExtension(const char* name) {
     return starboard::GetPlayerSettingsApi();
   }
   if (strcmp(name, kStarboardExtensionAccessibilityName) == 0) {
-    // TODO(b/377052218): Re-enable
-    // return starboard::GetAccessibilityApi();
-    return NULL;
+    return starboard::GetAccessibilityApi();
   }
   if (strcmp(name, kStarboardExtensionSystemInfoName) == 0) {
     return starboard::GetSystemInfoApi();
