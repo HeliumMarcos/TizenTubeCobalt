@@ -505,14 +505,19 @@ public class MediaCodecUtil {
           MediaCodecInfo.VideoCapabilities videoCapabilities =
               capabilityInfo.getVideoCapabilities();
           if (videoCapabilities != null) {
-            Log.v(
-                TAG,
-                "L1 video support: name=%s mime=%s 2160p30=%s 2160p60=%s hdr=%s",
-                name,
-                mimeType,
-                videoCapabilities.areSizeAndRateSupported(3840, 2160, 30),
-                videoCapabilities.areSizeAndRateSupported(3840, 2160, 60),
-                capabilityInfo.isHdrCapable());
+            try {
+              Log.v(
+                  TAG,
+                  "L1 video support: name=%s mime=%s 2160p30=%s 2160p60=%s hdr=%s",
+                  name,
+                  mimeType,
+                  videoCapabilities.areSizeAndRateSupported(3840, 2160, 30),
+                  videoCapabilities.areSizeAndRateSupported(3840, 2160, 60),
+                  capabilityInfo.isHdrCapable());
+            } catch (IllegalArgumentException | IllegalStateException e) {
+              // Diagnostic probes must not break codec enumeration or playback.
+              Log.w(TAG, "L1 video diagnostic unavailable: %s (%s): %s", name, mimeType, e);
+            }
           }
         } else if (mimeType.startsWith("audio/")) {
           MediaCodecInfo.AudioCapabilities audioCapabilities =
