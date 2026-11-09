@@ -1,0 +1,34 @@
+name: Upstream update check
+
+on:
+  schedule:
+    - cron: '23 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compare upstream and fork main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream_sha="$(gh api repos/reisxd/TizenTubeCobalt/commits/main --jq .sha)"
+          fork_sha="$(gh api "repos/$REPO/commits/main" --jq .sha)"
+          compare="$(gh api "repos/$REPO/compare/$fork_sha...$upstream_sha" || true)"
+          ahead="$(jq -r '.ahead_by // 0' <<< "$compare")"
+          if [[ "$ahead" -gt 0 ]]; then
+            title="Upstream updates available for review"
+            body="Upstream reisxd/TizenTubeCobalt main has $ahead commit(s) not present in this fork. Review and merge safely; do not overwrite L1 customizations.\n\nUpstream SHA: $upstream_sha\nFork SHA: $fork_sha"
+            existing="$(gh issue list --repo "$REPO" --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+            if [[ -z "$existing" ]]; then
+              gh issue create --repo "$REPO" --title "$title" --body "$(printf '%b' "$body")"
+            fi
+          fi
