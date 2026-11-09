@@ -1,25 +1,21 @@
-# Continuação no Codex Windows — TizenTubeCobalt L1
+# Continuação — TizenTubeCobalt L1 / Cobalt 27.lts.11
 
-Copie a seção abaixo para uma nova conversa. Este registro foi preparado em 2026-11-09 a partir da branch remota; **revalide HEAD e estado local**.
+Este prompt está atualizado em 2026-11-09. Copie-o em uma nova conversa no Codex Windows.
 
 ---
 
-**CONTINUAÇÃO DE DESENVOLVIMENTO — TizenTubeCobalt L1 / TCL C7K**
+**CONTINUAÇÃO DE DESENVOLVIMENTO — TizenTubeCobalt L1**
 
-Continue o repositório https://github.com/HeliumMarcos/TizenTubeCobalt na branch `upgrade/cobalt-27-lts-11` (PR #2 em rascunho). Não confunda com o projeto DownloadRush.
+Continue o projeto https://github.com/HeliumMarcos/TizenTubeCobalt, branch `upgrade/cobalt-27-lts-11`, PR #2 em rascunho. Leia `AGENTS.md` e `docs/CODEX_PROGRESS.md`. Antes de sincronizar, verifique `git status --short --branch`, HEAD, remotes e alterações locais não commitadas; **não descarte nada**. Não confundir com o projeto DownloadRush.
 
-Primeiro leia `AGENTS.md`, `docs/CODEX_PROGRESS.md`, `docs/l1-cobalt-27-lts-11-diff-triage.md` e, quando pertinente, `docs/l1-media3-exoplayer-findings.md`. Verifique `git status --short --branch`, `git remote -v`, HEAD remoto e diffs locais antes de sincronizar; **não descarte alterações não commitadas**. Não refaça auditorias que ainda forem válidas.
+**Estado confirmado no GitHub:** árvore oficial **Cobalt 27.lts.11 integrada** como snapshot no commit `4f973b2c226a8f8f2556bb3ee49099cfe43cf690` (upstream tag `27.lts.11`, commit `4aa03b3d7678dbce63da14b5e5459defd5ea6abf`). `cobalt/version.h` já declara 27.lts.11. Foram preservados ExoPlayer/Media3, JNI/Starboard e recursos próprios do TizenTube, como diagnósticos de codec e APIs adicionais. Os 3 conflitos foram resolvidos. Os workflows `.github/workflows` do fork foram mantidos porque GITHUB_TOKEN não podia alterá-los. Não refazer a migração nem reaplicar o antigo patch HDR.
 
-**Estado técnico:** o motor ainda declara Cobalt `27.lts.10`; atualização para `27.lts.11` incompleta. O build é GN/Ninja/gclient. Destino Android TV TCL C7K requer `android-arm`/`armeabi-v7a`, alvo `//cobalt/android:cobalt_apk`; não presumir ARM64. `l1-android-source-check.yml` é preflight estático, não compilação; o workflow principal pode depender de runner self-hosted.
+**Limite do que foi verificado:** workflow de integração teve `success`, e os principais arquivos foram inspecionados no GitHub. **Não houve compilação Java, C++, JNI ou APK**, nem testes do aplicativo modificado no hardware. Checks de PR pós-integração apareceram como `action_required` e exigem investigação/execução, não são testes aprovados.
 
-**Mudança enviada ao GitHub:** no commit `caeb02d22cbfcb9ee4127b0669021bc1f0c8f882`, `MediaCodecBridge.ColorInfo` foi integrado ao `MediaCodecUtil.getHdrStaticInfo(...)` do fork com base no upstream 27.lts.11, removendo a implementação duplicada dos metadados HDR. Validado por inspeção de fontes, **não compilado**. As regras e o registro de progresso foram adicionados em `AGENTS.md` e `docs/CODEX_PROGRESS.md`. A aplicação do patch de HDR via `git apply` **não é necessária** se esse commit já estiver no checkout.
+**Objetivo agora:** preparar e executar uma compilação real para **Android ARMv7** (`android-arm`/`armeabi-v7a`) usando GN/Ninja/gclient e o alvo `//cobalt/android:cobalt_apk`. Verificar se há Linux/runner habilitado; não tentar tratar este projeto como Gradle puro. Investigar possíveis erros de dependências Media3/ExoPlayer, JNI, assinatura e código nativo. Manter `main` e a PR em draft sem merge nem release. Não criar APK final sem autorização explícita.
 
-**Diagnósticos da TV:** decodificadores MediaTek VP9 Profile 2 HDR, AV1 Main10 HDR, HEVC HDR e Dolby Vision declaram suporte 4K/60. Teste Nuvio demonstrou Dolby Vision 3840×1608/60 e Dolby Digital Plus 5.1 na rota eARC conectada à LG S95TR. Não há prova de passthrough original nem de funcionamento do Cobalt modificado.
+**Hardware de teste:** TCL C7K com saída eARC para LG S95TR. Diagnósticos do Android/Nuvio confirmaram suporte anunciado VP9/AV1 HDR 4K60, reprodução Dolby Vision 3840×1608/60 e E-AC-3 5.1 no Nuvio. Isso não comprova Cobalt 27.lts.11 funcional nem passthrough original. Posteriormente testar seleção real de faixas 4K/HDR/5.1, fallback PCM, estabilidade e controle remoto.
 
-**Próxima tarefa concreta:** conferir as diferenças oficiais 27.lts.10→27.lts.11 de `MediaCodecBridge.java` que ainda não foram portadas e interfaces JNI/nativas relacionadas. Investigar `MediaCodecBridgeBuilder.java`, `AudioOutputManager.java` e integração ExoPlayer/Media3, aplicando mudanças coerentes e testes proporcionais. Preparar um caminho **real** de build `android-arm` e somente declarar APK funcional após build e teste de instalação/reprodução.
-
-**Limites:** preservar alterações do fork e checkout local; não alterar assinatura/package ID; não fazer commit, push, merge nem release sem nova autorização explícita; não publicar APK final sem autorização. Não inventar validações. Atualizar `docs/CODEX_PROGRESS.md` após marcos relevantes.
-
-Ao concluir, informe: **implementado, arquivos, testes comprovados, pendências e próximo passo**.
+Evite análises e operações repetitivas; use testes proporcionais, cite evidência real, preserve as personalizações e atualize `docs/CODEX_PROGRESS.md` após marcos. Não faça commit/push/merge/release sem autorização da tarefa atual. Relate implementado, arquivos, testes, pendências e próximo passo.
 
 ---

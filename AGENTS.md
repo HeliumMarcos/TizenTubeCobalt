@@ -6,7 +6,7 @@ Instruções para agentes de programação e Codex neste repositório. Preserve 
 - Repositório: `HeliumMarcos/TizenTubeCobalt`. Branch de migração: `upgrade/cobalt-27-lts-11`; PR #2 em rascunho.
 - Fork Android TV de Cobalt/Chromium, com C++/Java e ferramentas Python/YAML. O motor é compilado via **GN/Ninja**, não por um simples `gradlew assembleRelease`.
 - Alvo da TCL C7K: `android-arm`, ABI `armeabi-v7a`, alvo `//cobalt/android:cobalt_apk`, configuração `.github/config/android-arm.json`; não trocar por ARM64 sem decisão explícita.
-- A migração **27.lts.10 → 27.lts.11 está incompleta**. Confirmar `cobalt/version.h`, media/JNI/Starboard/ExoPlayer e resultado do build antes de declarar concluída.
+- A **integração da árvore de código-fonte 27.lts.11 foi aplicada** como snapshot no commit `4f973b2` (upstream `4aa03b3`), preservando o fork. **O APK ainda não foi compilado nem testado.** Diferencie integração de fontes, aprovação CI, compilação e validação no dispositivo; não declare a migração operacional concluída sem essas verificações.
 - Leia `docs/CODEX_PROGRESS.md` para estado e próximo passo; valide contra o Git atual.
 
 ## Contexto e investigação eficiente

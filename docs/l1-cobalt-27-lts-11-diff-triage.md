@@ -25,4 +25,4 @@ The official 27.lts.11 diff introduces or modifies **ExoPlayer-related Android b
 4. Build and test the Android app before declaring the upgrade complete.
 5. Keep a rollback branch and do not merge until video and audio regression tests pass.
 
-Status: **triage only**; source still reports `27.lts.10`.
+Status after 2026-11-09: **source snapshot integrated** at commit `4f973b2c226a8f8f2556bb3ee49099cfe43cf690` from official tag `27.lts.11` (commit `4aa03b3d7678dbce63da14b5e5459defd5ea6abf`). The three reviewed conflicts were resolved while preserving fork customizations. This is a **single-parent source-tree integration**, not an import of 166 individual upstream commits. Fork `.github/workflows` was deliberately retained because GitHub Actions' token could not update workflow files. The native/Java APK **has not been compiled** and the migration remains unvalidated at runtime.

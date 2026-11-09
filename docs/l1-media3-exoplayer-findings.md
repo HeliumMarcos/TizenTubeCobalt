@@ -9,7 +9,7 @@ Verified in source:
 - `ExoPlayerManager` constructs Media3 formats and configures decoder selection.
 - The manager recognizes `MimeTypes.AUDIO_AC3`, `AUDIO_E_AC3`, and `AUDIO_E_AC3_JOC` for passthrough.
 - Its codec selector returns an empty decoder list for those Dolby audio MIME types, explicitly favoring passthrough; video decoders are filtered to hardware-accelerated ones, with a software fallback if no hardware decoder is found.
-- These Java files are absent at the same paths in the fork's current 27.lts.10 tree.
+- These Java files were absent in the fork's original 27.lts.10 tree, but were imported with the official 27.lts.11 source snapshot (commit `4f973b2`). Their AndroidX Media3 build dependencies, C++ bridge and JNI source are present; actual build/runtime integration is not yet verified.
 
 ## Risks / requirements
 1. Verify the native Starboard bridge selects the ExoPlayer path, and identify its build/runtime feature flags.
@@ -19,4 +19,4 @@ Verified in source:
 5. Check Media3 dependency versions and Gradle build configuration before porting the Java files.
 6. Build and test 2160p, HDR, 5.1 and audio-track switching on TCL C7K + LG S95TR.
 
-Status: investigation only; do not change `COBALT_VERSION` until the complete engine integration has been migrated and built.
+Status (2026-11-09): official 27.lts.11 **source integrated**; `COBALT_VERSION` now declares `27.lts.11`. **No Java/native build, APK, codec negotiation or passthrough runtime test completed** on the new source.
