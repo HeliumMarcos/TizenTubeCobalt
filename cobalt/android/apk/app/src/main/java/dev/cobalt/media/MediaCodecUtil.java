@@ -481,6 +481,16 @@ public class MediaCodecUtil {
       }
 
       for (String mimeType : codecInfo.getSupportedTypes()) {
+        // L1 diagnostics: report the codecs exposed to Cobalt before quality selection.
+        // Keep this at verbose level to avoid flooding normal playback logs.
+        if (mimeType.startsWith("video/") || mimeType.startsWith("audio/")) {
+          Log.v(
+              TAG,
+              "L1 codec capability: name=%s mime=%s software=%s",
+              name,
+              mimeType,
+              isSoftwareDecoder(codecInfo));
+        }
         codecCapabilityInfos.add(new CodecCapabilityInfo(codecInfo, mimeType));
       }
     }
