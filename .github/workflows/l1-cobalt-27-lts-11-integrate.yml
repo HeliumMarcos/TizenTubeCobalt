@@ -101,7 +101,13 @@ jobs:
           test -f cobalt/android/apk/app/src/main/java/dev/cobalt/media/ExoPlayerBridge.java
           test -f starboard/android/shared/exoplayer/exoplayer_bridge.cc
           grep -Fq 'android-arm' .github/config/android-arm.json
-          git diff --cached --check "$fork_head"
+          # The official tag itself has unrelated pre-existing whitespace (e.g.
+          # components/viz/service/display/overlay_processor_surface_control.cc).
+          # Check our reviewed conflict resolutions without modifying upstream.
+          git diff --cached --check "$fork_head" -- \
+            cobalt/android/apk/app/src/main/java/dev/cobalt/coat/BaseStarboardBridge.java \
+            cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java \
+            starboard/android/shared/base_starboard_bridge.cc
 
           resolved_tree="$(git write-tree)"
           git config user.name 'github-actions[bot]'
