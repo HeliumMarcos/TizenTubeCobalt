@@ -523,12 +523,17 @@ public class MediaCodecUtil {
           MediaCodecInfo.AudioCapabilities audioCapabilities =
               capabilityInfo.getAudioCapabilities();
           if (audioCapabilities != null) {
-            Log.v(
-                TAG,
-                "L1 audio decode support: name=%s mime=%s maxInputChannels=%d",
-                name,
-                mimeType,
-                audioCapabilities.getMaxInputChannelCount());
+            try {
+              Log.v(
+                  TAG,
+                  "L1 audio decode support: name=%s mime=%s maxInputChannels=%d",
+                  name,
+                  mimeType,
+                  audioCapabilities.getMaxInputChannelCount());
+            } catch (IllegalArgumentException | IllegalStateException e) {
+              // Diagnostic probes must not prevent normal audio codec selection.
+              Log.w(TAG, "L1 audio diagnostic unavailable: %s (%s): %s", name, mimeType, e);
+            }
           }
         }
         codecCapabilityInfos.add(capabilityInfo);
