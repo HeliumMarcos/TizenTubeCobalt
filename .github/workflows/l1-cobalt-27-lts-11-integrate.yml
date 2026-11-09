@@ -143,14 +143,8 @@ jobs:
           # Squash the upstream SOURCE SNAPSHOT into the fork rather than pushing
           # all 166 official history commits (previous Git HTTPS push timed out 408).
           # The full upstream provenance is recorded in the commit message.
-          merge_commit="$(printf 'Integrate Cobalt 27.lts.11 source snapshot
-
-Upstream: youtube/cobalt tag 27.lts.11
-Upstream commit: %s
-Merge base: %s
-Preserve reviewed TizenTube JNI and codec customizations.
-This is a source-tree integration (one parent), not a full-history merge.
-' "$upstream" "$base" | git commit-tree "$resolved_tree" -p "$fork_head")"
+          merge_message="$(printf 'Integrate Cobalt 27.lts.11 source snapshot\n\nUpstream: youtube/cobalt tag 27.lts.11\nUpstream commit: %s\nMerge base: %s\nPreserve reviewed TizenTube JNI and codec customizations.\nThis is a source-tree integration (one parent), not a full-history merge.\n' "$upstream" "$base")"
+          merge_commit="$(printf '%s\n' "$merge_message" | git commit-tree "$resolved_tree" -p "$fork_head")"
           echo "candidate-merge-commit=$merge_commit" | tee -a integration-report/source-commits.txt
 
           # No force: abort rather than overwrite any concurrent branch update.
