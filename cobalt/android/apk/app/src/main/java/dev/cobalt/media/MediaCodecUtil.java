@@ -493,7 +493,14 @@ public class MediaCodecUtil {
               mimeType,
               isSoftwareDecoder(codecInfo));
         }
-        CodecCapabilityInfo capabilityInfo = new CodecCapabilityInfo(codecInfo, mimeType);
+        CodecCapabilityInfo capabilityInfo;
+        try {
+          capabilityInfo = new CodecCapabilityInfo(codecInfo, mimeType);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+          // A broken vendor codec must not abort enumeration of all other codecs.
+          Log.w(TAG, "L1 skipping codec with invalid capabilities: %s (%s): %s", name, mimeType, e);
+          continue;
+        }
         if (mimeType.startsWith("video/")) {
           MediaCodecInfo.VideoCapabilities videoCapabilities =
               capabilityInfo.getVideoCapabilities();
