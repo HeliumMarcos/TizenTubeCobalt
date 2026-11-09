@@ -19,6 +19,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          # Evaluate the feature head, not GitHub's synthetic PR merge commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Fetch official Cobalt LTS tags
         run: |
@@ -46,6 +48,30 @@ jobs:
           git diff --name-status HEAD "$TARGET" -- cobalt starboard > migration-report/fork-vs-official-27-lts-11.txt
           git diff "$BASE" "$TARGET" -- cobalt/version.h > migration-report/upstream-version.patch
           grep -Ei 'codec|audio|video|exo|media|starboard' migration-report/upstream-engine-changed-paths.txt > migration-report/media-changed-paths.txt || true
+      - name: Check upstream three-way merge without changing files
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Explicit base works with a shallow PR checkout and keeps fork changes.
+          # 0 = clean; 1 = conflicts; >1 = actual probe error.
+          BASE=refs/tags/l1-official-27.lts.10
+          TARGET=refs/tags/l1-official-27.lts.11
+          set +e
+          git merge-tree --write-tree --name-only --merge-base="$BASE" HEAD "$TARGET" > migration-report/merge-probe.txt 2>&1
+          status=$?
+          set -e
+          {
+            printf 'Merge base: %s\n' "$(git rev-parse "$BASE")"
+            printf 'Fork HEAD: %s\n' "$(git rev-parse HEAD)"
+            printf 'Upstream target: %s\n' "$(git rev-parse "$TARGET")"
+            printf 'merge-tree status: %s (0=clean,1=conflicts,other=error)\n' "$status"
+            echo 'No checkout changes, commits, or upstream merges were performed.'
+          } > migration-report/merge-probe-status.txt
+          cat migration-report/merge-probe-status.txt
+          head -n 60 migration-report/merge-probe.txt
+          if ((status > 1)); then
+            echo "::warning::merge-tree probe failed; inspect artifact."
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: cobalt-27-lts-11-migration-audit
