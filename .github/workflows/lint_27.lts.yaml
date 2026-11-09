@@ -16,12 +16,12 @@ permissions: {}
 jobs:
   initialize:
     name: Initialize
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       docker_content_sha: ${{ steps.set-docker-hash.outputs.docker_content_sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           filter: blob:none
@@ -50,7 +50,7 @@ jobs:
       packages: write
     steps:
       - name: Restore CI Essentials
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           filter: blob:none
@@ -76,13 +76,13 @@ jobs:
     name: Pre-Commit
     needs: initialize
     if: github.event_name == 'pull_request' && github.event.action != 'edited'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       image: ghcr.io/youtube/cobalt/pre-commit:${{ needs.initialize.outputs.docker_content_sha }}
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
           filter: blob:none
@@ -95,7 +95,7 @@ jobs:
   check-bug-id:
     name: Bug ID Check
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Bug ID Check
         uses: gsactions/commit-message-checker@16fa2d5de096ae0d35626443bcd24f1e756cafee # v2.0.0

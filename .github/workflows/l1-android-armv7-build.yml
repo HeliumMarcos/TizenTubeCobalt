@@ -17,10 +17,10 @@ concurrency:
 
 jobs:
   source-readiness:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: |
@@ -97,7 +97,7 @@ jobs:
           done
           echo "Host capacity checks passed."
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: cobalt/src
           persist-credentials: false
@@ -159,7 +159,7 @@ jobs:
           echo "APK built and ABI checked. Installation and playback on TCL C7K are still untested."
 
       - name: Upload test APK (no GitHub Release)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tizentube-cobalt-27-lts-11-armv7-test-apk
           path: build-artifacts/

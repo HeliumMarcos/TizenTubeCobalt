@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   get-sha:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       sha: ${{ steps.set-sha.outputs.sha }}
     steps:
@@ -37,12 +37,12 @@ jobs:
           fi
 
   get-targets:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       targets: ${{ steps.short-targets.outputs.targets }}
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: |
             .github/actions/test_targets_json
@@ -66,7 +66,7 @@ jobs:
 
   wait-for-kokoro-build:
     needs: get-sha
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 150 # 2.5 hours timeout to ensure we don't block forever but allow 2h polling
     outputs:
       invocation_id: ${{ steps.poll-status.outputs.invocation_id }}
@@ -139,7 +139,7 @@ jobs:
           done
 
       - name: Upload to GitHub Actions
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tvos-test-artifacts
           path: "*.tar.gz"
@@ -156,7 +156,7 @@ jobs:
         target: ${{ fromJSON(needs.get-targets.outputs.targets) }}
     steps:
       - name: Checkout Cobalt (Sparse)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: |
             cobalt/testing/filters
@@ -164,7 +164,7 @@ jobs:
             cobalt/tools
 
       - name: Download from GitHub Actions
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tvos-test-artifacts
 
@@ -239,7 +239,7 @@ jobs:
 
       - name: Archive Test Results
         if: always() && steps.filter.outputs.skipped != 'true'
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tvos_${{ matrix.target }}_test_results
           path: results/*
@@ -247,7 +247,7 @@ jobs:
   validate-test-result:
     needs: [wait-for-kokoro-build, run-tests]
     if: always() && !cancelled() && needs.wait-for-kokoro-build.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: tvos_tests_passing
     steps:
       - name: Check test results
@@ -273,7 +273,7 @@ jobs:
           fi
       - name: Upload Shepherd Report
         if: always()
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shepherd-report-tvos
           path: shepherd_report.json

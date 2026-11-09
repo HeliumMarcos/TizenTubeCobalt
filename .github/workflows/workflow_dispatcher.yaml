@@ -23,7 +23,7 @@ permissions:
 jobs:
   dispatch:
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'runtest' || github.event.label.name == 'yts_playback_test' || github.event.label.name == 'kokoro:run' || github.event.label.name == 'kokoro:force-run'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: write
       pull-requests: write
