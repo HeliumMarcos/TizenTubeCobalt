@@ -21,6 +21,7 @@ jobs:
           sparse-checkout: |
             cobalt/android
             cobalt/version.h
+            .github/config/android-arm.json
             .github/config/android-arm64.json
       - name: Check source and Android build target
         shell: bash
@@ -33,7 +34,7 @@ jobs:
           root = Path("cobalt/android/apk/app/src/main/java/dev/cobalt/media")
           util = root / "MediaCodecUtil.java"
           bridge = root / "MediaCodecBridge.java"
-          config = Path(".github/config/android-arm64.json")
+          config = Path(".github/config/android-arm.json")
           version = Path("cobalt/version.h")
 
           for file in (util, bridge, config, version):
@@ -42,7 +43,7 @@ jobs:
 
           data = json.loads(config.read_text())
           assert data["test_root_target"] == "//cobalt/android:cobalt_apk", "Unexpected Android APK target"
-          assert "android-arm64" in data["platforms"], "ARM64 platform not configured"
+          assert "android-arm" in data["platforms"], "ARMv7/32-bit Android platform not configured"
 
           src = util.read_text()
           assert "L1 video support:" in src, "4K diagnostic missing"
@@ -55,7 +56,7 @@ jobs:
                   if any(line.startswith(marker) for line in text.splitlines()):
                       raise SystemExit(f"Merge conflict marker {marker} in {file}")
 
-          print("L1 Android source preflight passed.")
+          print("L1 Android ARMv7 source preflight passed.")
           print("NOTE: This is NOT a Java/native compile or APK build.")
           print("Version:", next((line.strip() for line in version.read_text().splitlines()
                                   if "COBALT_VERSION " in line), "unknown"))
