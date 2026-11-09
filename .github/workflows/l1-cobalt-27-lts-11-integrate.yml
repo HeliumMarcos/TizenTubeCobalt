@@ -1,0 +1,128 @@
+name: Integrate official Cobalt 27.lts.11
+
+on:
+  push:
+    branches:
+      - upgrade/cobalt-27-lts-11
+    paths:
+      - '.github/workflows/l1-cobalt-27-lts-11-integrate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: l1-cobalt-27-lts-11-integration
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    if: github.repository == 'HeliumMarcos/TizenTubeCobalt' && github.ref == 'refs/heads/upgrade/cobalt-27-lts-11'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: upgrade/cobalt-27-lts-11
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Retrieve official upstream 27.lts.10 and 27.lts.11
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add cobalt-official https://github.com/youtube/cobalt.git
+          git -c protocol.version=2 fetch --no-tags --filter=blob:none cobalt-official \
+            refs/tags/27.lts.10:refs/tags/l1-official-27.lts.10 \
+            refs/tags/27.lts.11:refs/tags/l1-official-27.lts.11
+
+      - name: Resolve reviewed conflicts and validate complete source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p integration-report
+          fork_head="$(git rev-parse HEAD)"
+          base="$(git rev-parse refs/tags/l1-official-27.lts.10)"
+          upstream="$(git rev-parse refs/tags/l1-official-27.lts.11)"
+
+          python3 tools/l1-resolve-cobalt-27-lts-11-conflicts.py --self-test
+          set +e
+          git merge-tree --write-tree --name-only --merge-base="$base" "$fork_head" "$upstream" > integration-report/merge-tree.txt 2>&1
+          status=$?
+          set -e
+          printf 'fork=%s\nbase=%s\nupstream=%s\nmerge-tree-status=%s\n' \
+            "$fork_head" "$base" "$upstream" "$status" > integration-report/source-commits.txt
+          cat integration-report/source-commits.txt
+          if (( status > 1 )); then
+            echo "::error::Merge-tree failure; no commit was created."
+            exit 1
+          fi
+          tree="$(head -n 1 integration-report/merge-tree.txt)"
+          if [[ ! "$tree" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Unexpected merge-tree result; no commit was created."
+            exit 1
+          fi
+
+          if (( status == 1 )); then
+            # Fail if the upstream/fork changed and any new conflicts arise.
+            awk 'NR == 1 {next} NF == 0 {exit} {print}' integration-report/merge-tree.txt > integration-report/conflicts.txt
+            python3 - <<'PY'
+          from pathlib import Path
+          expected = {
+              "cobalt/android/apk/app/src/main/java/dev/cobalt/coat/BaseStarboardBridge.java",
+              "cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java",
+              "starboard/android/shared/base_starboard_bridge.cc",
+          }
+          actual = set(Path("integration-report/conflicts.txt").read_text().splitlines())
+          if actual != expected:
+              raise SystemExit(f"Unreviewed merge conflicts: {actual ^ expected}")
+          print("All three reported merge conflicts are reviewed.")
+          PY
+          fi
+
+          # The merge-tree result is an isolated object; alter only CI's working tree.
+          git read-tree --reset -u "$tree"
+          if (( status == 1 )); then
+            python3 tools/l1-resolve-cobalt-27-lts-11-conflicts.py --root .
+            git add \
+              cobalt/android/apk/app/src/main/java/dev/cobalt/coat/BaseStarboardBridge.java \
+              cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java \
+              starboard/android/shared/base_starboard_bridge.cc
+          fi
+
+          # Verify both the official engine and the fork-specific functionality.
+          grep -Fq '#define COBALT_VERSION "27.lts.11"' cobalt/version.h
+          grep -Fq 'MediaCodecUtil.getHdrStaticInfo(' cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecBridge.java
+          grep -Fq 'L1 video support:' cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java
+          grep -Fq 'L1 audio decode support:' cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java
+          grep -Fq 'InstallAppFromURL(' starboard/android/shared/base_starboard_bridge.cc
+          grep -Fq 'OnPrimaryMainFrameNavigationStarted(' starboard/android/shared/base_starboard_bridge.cc
+          test -f cobalt/android/apk/app/src/main/java/dev/cobalt/dial/DIALServer.java
+          test -f cobalt/android/apk/app/src/main/java/dev/cobalt/media/ExoPlayerBridge.java
+          test -f starboard/android/shared/exoplayer/exoplayer_bridge.cc
+          grep -Fq 'android-arm' .github/config/android-arm.json
+          git diff --cached --check "$fork_head"
+
+          resolved_tree="$(git write-tree)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          merge_commit="$(printf 'Merge official Cobalt 27.lts.11 into TizenTube fork\n\nPreserve reviewed TizenTube JNI and codec customizations.\n' | git commit-tree "$resolved_tree" -p "$fork_head" -p "$upstream")"
+          echo "candidate-merge-commit=$merge_commit" | tee -a integration-report/source-commits.txt
+
+          # No force: abort rather than overwrite any concurrent branch update.
+          remote_head="$(git ls-remote origin refs/heads/upgrade/cobalt-27-lts-11 | awk '{print $1}')"
+          if [[ "$remote_head" != "$fork_head" ]]; then
+            echo "::error::Branch advanced; refusing to overwrite concurrent changes."
+            exit 1
+          fi
+          git push origin "$merge_commit:refs/heads/upgrade/cobalt-27-lts-11"
+          echo "Merged upstream 27.lts.11: $merge_commit" >> "$GITHUB_STEP_SUMMARY"
+          echo "Full Android compilation and hardware playback remain unverified." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve merge diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobalt-27-lts-11-integration-report
+          path: integration-report/
+          retention-days: 14
