@@ -106,6 +106,15 @@ jobs:
             done
           fi
 
+          # GitHub Actions' GITHUB_TOKEN cannot update .github/workflows in a
+          # git push. Keep fork workflows unchanged in this source integration;
+          # review upstream CI changes independently with appropriate access.
+          git restore --source="$fork_head" --staged -- .github/workflows
+          if [[ -n "$(git diff --cached --name-only "$fork_head" -- .github/workflows)" ]]; then
+            echo "::error::Workflow diff remains; refusing unauthorized push."
+            exit 1
+          fi
+
           # Check only the three reviewed conflict resolutions. Upstream itself
           # includes unrelated pre-existing whitespace that must stay unchanged.
           git diff --cached --check "$fork_head" -- \
