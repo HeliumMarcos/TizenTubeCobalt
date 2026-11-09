@@ -46,9 +46,28 @@ $lines = foreach ($property in $properties) {
 $lines | Set-Content -Path (Join-Path $folder "device-properties.txt") -Encoding UTF8
 
 # ADB output is diagnostic evidence, not a guarantee of stream or passthrough support.
-& adb @adbArgs shell dumpsys media.codec > (Join-Path $folder "media-codec.txt") 2>&1
-& adb @adbArgs shell dumpsys audio > (Join-Path $folder "audio.txt") 2>&1
-& adb @adbArgs shell dumpsys display > (Join-Path $folder "display.txt") 2>&1
+$oldPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+
+try {
+    & adb @adbArgs shell dumpsys -l 2>&1 |
+        Out-File (Join-Path $folder "services.txt")
+
+    & adb @adbArgs shell dumpsys media.codec 2>&1 |
+        Out-File (Join-Path $folder "media-codec.txt")
+
+    & adb @adbArgs shell dumpsys media.metrics 2>&1 |
+        Out-File (Join-Path $folder "media-metrics.txt")
+
+    & adb @adbArgs shell dumpsys audio 2>&1 |
+        Out-File (Join-Path $folder "audio.txt")
+
+    & adb @adbArgs shell dumpsys display 2>&1 |
+        Out-File (Join-Path $folder "display.txt")
+}
+finally {
+    $ErrorActionPreference = $oldPreference
+}
 
 # Clear only the log buffer so the next playback session is easier to inspect.
 & adb @adbArgs logcat -c
