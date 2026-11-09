@@ -17,6 +17,15 @@ Atualizado em **2026-11-09** após integração no GitHub. Base: branch remota `
 - Preservados os diagnósticos `L1 video support:` e `L1 audio decode support:`, e os métodos do fork `InstallAppFromURL` juntamente com o novo `OnPrimaryMainFrameNavigationStarted`.
 - O workflow de integração [#42657896044](https://github.com/HeliumMarcos/TizenTubeCobalt/actions/runs/42657896044) concluiu com **success**. A primeira tentativa encontrou HTTP 408 no push de todo o histórico; outra foi recusada por falta da permissão `workflows`. Esses problemas foram superados com o snapshot de um ancestral e preservação de workflows.
 
+## Tentativa de compilação ARMv7 pelo GitHub Actions — 2026-11-09
+- Foi criado `.github/workflows/l1-android-armv7-build.yml` no commit `cb0e9ad2b45357097788d067a0827b4b9ad2716a`. Workflow: [execução #42662415043](https://github.com/HeliumMarcos/TizenTubeCobalt/actions/runs/42662415043).
+- **`source-readiness`: SUCCESS** no runner `ubuntu-latest`: configurações `android-arm`, `target_cpu=arm`, alvo `//cobalt/android:cobalt_apk`, versão, Media3 e ExoPlayer Java/C++ presentes. Isso é um teste de configuração; não compila código.
+- **`build-apk-armv7`: QUEUED** na última inspeção, aguardando runner Linux x64 self-hosted. O job exige no mínimo 140 GiB livres e 16 GiB RAM (recomendado 200+ GiB e 32 GiB), pré-requisitos do Chromium/Cobalt e conectividade com GitHub e Google depot_tools.
+- Fluxo real quando runner disponível: checkout do fork no caminho `cobalt/src`, configurar `gclient`/Android, sincronizar dependências, `gn.py -p android-arm -c devel --no-rbe`, `autoninja -j 4 -C out/android-arm_devel cobalt/android:cobalt_apk`, validar presença de biblioteca `armeabi-v7a` no APK e publicar como artefato temporário de testes, **sem release**.
+- **Não há APK e não há build Java/C++/JNI concluídos.** Não tratar `queued` como compilação. A conexão ADB local com a TCL C7K não é acessível por um runner GitHub na nuvem.
+- Para destravar: conectar/ligar um runner Linux x64 self-hosted no repositório, com armazenamento suficiente, ou usar um serviço de build Linux equivalente. Confirmar logs, resolver erros de toolchain/dependências, depois instalar/testar APK na TV.
+- Workflows e deploys não devem receber credenciais de produção; o APK de diagnóstico só será anexado como artefato do job se passar na verificação da ABI.
+
 ## Build e validação — pendentes
 - Compilação é por **GN/Ninja, gclient** (C++/Java), não por Gradle puro; alvo `//cobalt/android:cobalt_apk` da configuração `.github/config/android-arm.json` (`android-arm`).
 - Os workflows `.github/workflows/l1-android-source-check.yml` e `l1-cobalt-27-lts-11-audit.yml` são verificações estáticas/auditoria, não builds. Após o commit de integração os respectivos runs apareceram como `action_required`; **não alegar testes aprovados pós-merge** sem verificar e executar de fato.
