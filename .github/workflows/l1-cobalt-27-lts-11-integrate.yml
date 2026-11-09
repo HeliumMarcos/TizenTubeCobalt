@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: l1-cobalt-27-lts-11-integration
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   integrate:
@@ -80,36 +80,64 @@ jobs:
           PY
           fi
 
-          # The merge-tree result is an isolated object; alter only CI's working tree.
-          git read-tree --reset -u "$tree"
+          # Use a temporary Git index. Never materialize the entire Chromium tree
+          # with read-tree -u: that is extremely expensive on hosted runners.
+          export GIT_INDEX_FILE="$RUNNER_TEMP/l1-cobalt-merge.index"
+          rm -f "$GIT_INDEX_FILE"
+          echo "::notice::Loading merge result into an isolated Git index"
+          git read-tree "$tree"
+
           if (( status == 1 )); then
-            python3 tools/l1-resolve-cobalt-27-lts-11-conflicts.py --root .
-            git add \
+            root="$(mktemp -d "$RUNNER_TEMP/l1-cobalt-conflicts.XXXXXX")"
+            for file in \
               cobalt/android/apk/app/src/main/java/dev/cobalt/coat/BaseStarboardBridge.java \
               cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java \
-              starboard/android/shared/base_starboard_bridge.cc
+              starboard/android/shared/base_starboard_bridge.cc; do
+              mkdir -p "$root/$(dirname "$file")"
+              git show "$tree:$file" > "$root/$file"
+            done
+            python3 tools/l1-resolve-cobalt-27-lts-11-conflicts.py --root "$root"
+            for file in \
+              cobalt/android/apk/app/src/main/java/dev/cobalt/coat/BaseStarboardBridge.java \
+              cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java \
+              starboard/android/shared/base_starboard_bridge.cc; do
+              blob="$(git hash-object -w "$root/$file")"
+              git update-index --add --cacheinfo "100644,$blob,$file"
+            done
           fi
 
-          # Verify both the official engine and the fork-specific functionality.
-          grep -Fq '#define COBALT_VERSION "27.lts.11"' cobalt/version.h
-          grep -Fq 'MediaCodecUtil.getHdrStaticInfo(' cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecBridge.java
-          grep -Fq 'L1 video support:' cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java
-          grep -Fq 'L1 audio decode support:' cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java
-          grep -Fq 'InstallAppFromURL(' starboard/android/shared/base_starboard_bridge.cc
-          grep -Fq 'OnPrimaryMainFrameNavigationStarted(' starboard/android/shared/base_starboard_bridge.cc
-          test -f cobalt/android/apk/app/src/main/java/dev/cobalt/dial/DIALServer.java
-          test -f cobalt/android/apk/app/src/main/java/dev/cobalt/media/ExoPlayerBridge.java
-          test -f starboard/android/shared/exoplayer/exoplayer_bridge.cc
-          grep -Fq 'android-arm' .github/config/android-arm.json
-          # The official tag itself has unrelated pre-existing whitespace (e.g.
-          # components/viz/service/display/overlay_processor_surface_control.cc).
-          # Check our reviewed conflict resolutions without modifying upstream.
+          # Check only the three reviewed conflict resolutions. Upstream itself
+          # includes unrelated pre-existing whitespace that must stay unchanged.
           git diff --cached --check "$fork_head" -- \
             cobalt/android/apk/app/src/main/java/dev/cobalt/coat/BaseStarboardBridge.java \
             cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java \
             starboard/android/shared/base_starboard_bridge.cc
 
+          echo "::notice::Writing merged tree from isolated index"
           resolved_tree="$(git write-tree)"
+
+          # Check blobs in the merged tree, NOT the original checkout (27.lts.10).
+          check_contains() {
+            local path="$1" expected="$2"
+            # Do not use grep -q with pipefail: it can cause git show SIGPIPE.
+            if ! git show "$resolved_tree:$path" | grep -F "$expected" > /dev/null; then
+              echo "::error::Missing '$expected' in $path"
+              exit 1
+            fi
+          }
+          check_file() { git cat-file -e "$resolved_tree:$1"; }
+
+          check_contains cobalt/version.h '#define COBALT_VERSION "27.lts.11"'
+          check_contains cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecBridge.java 'MediaCodecUtil.getHdrStaticInfo('
+          check_contains cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java 'L1 video support:'
+          check_contains cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java 'L1 audio decode support:'
+          check_contains starboard/android/shared/base_starboard_bridge.cc 'InstallAppFromURL('
+          check_contains starboard/android/shared/base_starboard_bridge.cc 'OnPrimaryMainFrameNavigationStarted('
+          check_contains .github/config/android-arm.json 'android-arm'
+          check_file cobalt/android/apk/app/src/main/java/dev/cobalt/dial/DIALServer.java
+          check_file cobalt/android/apk/app/src/main/java/dev/cobalt/media/ExoPlayerBridge.java
+          check_file starboard/android/shared/exoplayer/exoplayer_bridge.cc
+          echo "::notice::Merged tree integrity checks passed; preparing Git commit"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           merge_commit="$(printf 'Merge official Cobalt 27.lts.11 into TizenTube fork\n\nPreserve reviewed TizenTube JNI and codec customizations.\n' | git commit-tree "$resolved_tree" -p "$fork_head" -p "$upstream")"
