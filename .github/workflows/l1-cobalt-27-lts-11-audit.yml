@@ -72,6 +72,27 @@ jobs:
           if ((status > 1)); then
             echo "::warning::merge-tree probe failed; inspect artifact."
           fi
+      - name: Save conflicted merge source for precise resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(awk '/^merge-tree status:/{print $3}' migration-report/merge-probe-status.txt)"
+          if [[ "$status" != "1" ]]; then
+            echo "No merge conflict source to extract."
+            exit 0
+          fi
+          tree="$(head -n 1 migration-report/merge-probe.txt)"
+          if [[ ! "$tree" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Invalid result tree SHA; cannot inspect conflicts."
+            exit 1
+          fi
+          mkdir -p migration-report/conflicts
+          for file in cobalt/android/apk/app/src/main/java/dev/cobalt/coat/BaseStarboardBridge.java cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java starboard/android/shared/base_starboard_bridge.cc; do
+            dest="migration-report/conflicts/$file"
+            mkdir -p "$(dirname "$dest")"
+            git show "$tree:$file" > "$dest"
+            echo "Saved conflicted source $file"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: cobalt-27-lts-11-migration-audit
