@@ -502,7 +502,7 @@ public class MediaCodecUtil {
                 name,
                 mimeType,
                 videoCapabilities.areSizeAndRateSupported(3840, 2160, 30),
-                videoCapabilities.areSizeAndRateSupported(3840, 2160, 60),
+                videoCapabilities.areSizeAndRateSupported(3840, 2160 , 60),
                 capabilityInfo.isHdrCapable());
           }
         } else if (mimeType.startsWith("audio/")) {
