@@ -15,8 +15,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: l1-android-armv7-apk-${{ github.ref }}
-  cancel-in-progress: false
+  group: l1-armv7-build-${{ github.sha }}
+  cancel-in-progress: true
 
 jobs:
   source-readiness:
