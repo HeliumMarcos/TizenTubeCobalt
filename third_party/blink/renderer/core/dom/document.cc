@@ -4051,7 +4051,27 @@ l1_audio_script->setTextContent(
       "if(ch==='6'){const s=auds.filter(a=>(a.audioChannels||2)>=6);if(s.length)auds=s.concat(auds.filter(a=>(a.audioChannels||2)<6));}"
       "else if(ch==='2'){const s=auds.filter(a=>(a.audioChannels||2)<=2);if(s.length)auds=s;}"
       "if(ac&&ac!=='any'){const m=auds.filter(a=>a.mimeType.includes(ac));if(m.length)auds=m.concat(auds.filter(a=>!a.mimeType.includes(ac)));}"
-      "r.streamingData.adaptiveFormats=vids.concat(auds);}}catch(e){}return r;};"
+      "r.streamingData.adaptiveFormats=vids.concat(auds);}}catch(e){}return r;};
+      "const CODECS=['any','ec-3','ac-3','opus','mp4a'];"
+      "const CHANS=['auto','6','2'];"
+      "window.cycleTizenTubeAudioPreset=function(){"
+      "const curC=cfg('preferredAudioCodec')||'any';const curCh=String(cfg('preferredAudioChannels')||'auto');"
+      "const nextIdx=(CODECS.indexOf(curC)+1)%CODECS.length;"
+      "const nextC=CODECS[nextIdx];"
+      "const nextCh=(nextIdx===0)?CHANS[(CHANS.indexOf(curCh)+1)%CHANS.length]:curCh;"
+      "setCfg('preferredAudioCodec',nextC);setCfg('preferredAudioChannels',nextCh);"
+      "return {codec:nextC,channels:nextCh};};"
+      "const obs=new MutationObserver(()=>{const items=document.querySelectorAll('ytlr-button-renderer,ytlr-toggle-button-renderer,[role=\"menuitem\"]');"
+      "for(const el of items){const txt=(el.textContent||'').trim();"
+      "if((txt.includes('Preferred Video Codec')||txt.includes('Codec de vídeo'))&&!el.parentElement.querySelector('[data-tt-l1-audio]')){"
+      "const btn=el.cloneNode(true);btn.setAttribute('data-tt-l1-audio','1');"
+      "const upd=()=>{const c=(cfg('preferredAudioCodec')||'any').toUpperCase();const ch=cfg('preferredAudioChannels')==='6'?'5.1':cfg('preferredAudioChannels')==='2'?'2.0':'Auto';"
+      "btn.textContent='Audio Preset: '+c+' ('+ch+' ch)';};upd();"
+      "const act=(e)=>{e.preventDefault();e.stopPropagation();window.cycleTizenTubeAudioPreset();upd();};"
+      "btn.addEventListener('click',act,true);btn.addEventListener('keydown',(e)=>{if(e.key==='Enter'||e.keyCode===13)act(e);},true);"
+      "el.parentElement.appendChild(btn);}}});"
+      "if(document.documentElement)obs.observe(document.documentElement,{childList:true,subtree:true});"
+      "else window.addEventListener('DOMContentLoaded',()=>obs.observe(document.documentElement,{childList:true,subtree:true}));""
       "})();");
   script_container->appendChild(l1_audio_script);
 
