@@ -39,6 +39,7 @@ import org.jni_zero.NativeMethods;
 @JNINamespace("starboard")
 public class AudioOutputManager {
   @NonNull private final List<AudioTrackBridge> mAudioTrackBridgeList;
+  private static final int TYPE_HDMI_EARC_COMPAT = 29;
   private final Context mContext;
 
   boolean mHasRegisteredAudioDeviceCallback = false;
@@ -91,7 +92,7 @@ public class AudioOutputManager {
               if (info.isSink()
                   && (info.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
                       || info.getType() == AudioDeviceInfo.TYPE_HDMI_ARC
-                      || info.getType() == AudioDeviceInfo.TYPE_HDMI)) {
+                      || info.getType() == AudioDeviceInfo.TYPE_HDMI || info.getType() == TYPE_HDMI_EARC_COMPAT)) {
                 relevantDevice = info;
                 break;
               }
@@ -215,6 +216,9 @@ public class AudioOutputManager {
         for (int count : channelCounts) {
           outDeviceInfo.channels = Math.max(outDeviceInfo.channels, count);
         }
+    if (outDeviceInfo.channels < 6 && (outDeviceInfo.type == AudioDeviceInfo.TYPE_HDMI || outDeviceInfo.type == AudioDeviceInfo.TYPE_HDMI_ARC || outDeviceInfo.type == TYPE_HDMI_EARC_COMPAT)) {
+      outDeviceInfo.channels = 6;
+    }
       }
       return true;
     }
@@ -263,6 +267,7 @@ public class AudioOutputManager {
         return "TYPE_FM_TUNER";
       case AudioDeviceInfo.TYPE_HDMI:
         return "TYPE_HDMI";
+      case TYPE_HDMI_EARC_COMPAT: return "TYPE_HDMI_EARC";
       case AudioDeviceInfo.TYPE_HDMI_ARC:
         return "TYPE_HDMI_ARC";
       case AudioDeviceInfo.TYPE_IP:
@@ -489,7 +494,7 @@ public class AudioOutputManager {
   private boolean hasPassthroughSupportForV23(final AudioDeviceInfo[] deviceInfos, int encoding) {
     for (AudioDeviceInfo info : deviceInfos) {
       final int type = info.getType();
-      if (type != AudioDeviceInfo.TYPE_HDMI && type != AudioDeviceInfo.TYPE_HDMI_ARC) {
+      if (type != AudioDeviceInfo.TYPE_HDMI && type != AudioDeviceInfo.TYPE_HDMI_ARC) && type != TYPE_HDMI_EARC_COMPAT {
         continue;
       }
       // TODO: ExoPlayer uses ACTION_HDMI_AUDIO_PLUG to detect the encodings supported via
