@@ -1,0 +1,205 @@
+name: L1 Android ARMv7 APK build
+
+on:
+  push:
+    branches:
+      - upgrade/cobalt-27-lts-11
+      - feature/l1-media-capabilities
+      - main
+    paths:
+      - '.github/workflows/l1-android-armv7-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: l1-android-armv7-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-readiness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            cobalt/android/BUILD.gn
+            cobalt/build/gn.py
+            cobalt/build/configs/android-arm
+            cobalt/build/configs/android_common.gn
+            cobalt/version.h
+            starboard/android/shared/BUILD.gn
+            starboard/android/shared/exoplayer
+            cobalt/android/apk/app/src/main/java/dev/cobalt/media
+            .github/config/android-arm.json
+      - name: Verify ARMv7 APK target and source wiring (not a compilation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          cfg = json.loads(Path('.github/config/android-arm.json').read_text())
+          assert cfg['platforms'] == ['android-arm']
+          assert cfg['test_root_target'] == '//cobalt/android:cobalt_apk'
+          gnargs = Path('cobalt/build/configs/android-arm/args.gn').read_text()
+          assert 'target_cpu = "arm"' in gnargs
+          version = Path('cobalt/version.h').read_text()
+          assert '#define COBALT_VERSION "27.lts.11"' in version
+          build = Path('cobalt/android/BUILD.gn').read_text()
+          assert 'android_apk("cobalt_apk")' in build
+          assert 'androidx_media3_media3_exoplayer_java' in build
+          assert 'media/ExoPlayerBridge.java' in build
+          assert 'media/ExoPlayerManager.java' in build
+          native = Path('starboard/android/shared/BUILD.gn').read_text()
+          assert 'exoplayer/exoplayer_bridge.cc' in native
+          assert Path('starboard/android/shared/exoplayer/exoplayer_bridge.cc').is_file()
+          media = Path('cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java').read_text()
+          assert 'L1 video support:' in media
+          assert 'L1 audio decode support:' in media
+          print('Source readiness PASS: Cobalt 27.lts.11 Android ARMv7 target and Media3 native/Java dependencies')
+          print('This does not compile the APK.')
+          PY
+
+  build-apk-armv7:
+    needs: source-readiness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Install depot_tools and system dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git python3 ninja-build openjdk-17-jdk-headless zip unzip curl
+          mkdir -p "$GITHUB_WORKSPACE/cobalt"
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git "$GITHUB_WORKSPACE/cobalt/depot_tools"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: cobalt/src
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Configure gclient workspace
+        working-directory: cobalt
+        run: |
+          set -euo pipefail
+          export PATH="$GITHUB_WORKSPACE/cobalt/depot_tools:$PATH"
+          gclient config --unmanaged --name=src "https://github.com/${GITHUB_REPOSITORY}.git"
+
+      - name: Synchronize Android dependencies
+        working-directory: cobalt
+        run: |
+          set -euo pipefail
+          export PATH="$GITHUB_WORKSPACE/cobalt/depot_tools:$PATH"
+          gclient sync --no-history --nohooks --jobs 4
+          gclient runhooks
+
+      - name: Generate GN files for Cobalt ARMv7
+        working-directory: cobalt/src
+        run: |
+          set -euo pipefail
+          export PATH="$GITHUB_WORKSPACE/cobalt/depot_tools:$PATH"
+          python3 cobalt/build/gn.py -p android-arm -c devel --no-rbe
+          gn desc out/android-arm_devel //cobalt/android:cobalt_apk type
+          echo 'GN generation completed for target_cpu=arm.'
+
+      - name: Compile Java, JNI and native code; package test APK
+        working-directory: cobalt/src
+        run: |
+          set -euo pipefail
+          export PATH="$GITHUB_WORKSPACE/cobalt/depot_tools:$PATH"
+          autoninja -j 4 -C out/android-arm_devel cobalt/android:cobalt_apk
+
+      - name: Verify APK ABI and prepare artifact
+        working-directory: cobalt/src
+        run: |
+          set -euo pipefail
+          apk="$(find out/android-arm_devel/apks -maxdepth 1 -name '*.apk' -type f -print -quit)"
+          if [[ -z "$apk" ]]; then
+            echo "::error::Ninja completed but no APK was found."
+            exit 1
+          fi
+          if ! zipinfo -1 "$apk" | grep -F 'lib/armeabi-v7a/' > /dev/null; then
+            echo "::error::APK does not contain armeabi-v7a native libraries."
+            exit 1
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/build-artifacts"
+          cp "$apk" "$GITHUB_WORKSPACE/build-artifacts/TizenTubeCobalt-27.lts.11-armv7-test.apk"
+          sha256sum "$GITHUB_WORKSPACE/build-artifacts/TizenTubeCobalt-27.lts.11-armv7-test.apk" | tee "$GITHUB_WORKSPACE/build-artifacts/SHA256SUMS.txt"
+          printf 'Commit: %s\nPlatform: android-arm\nGN target: //cobalt/android:cobalt_apk\nSource: %s\n' "$GITHUB_SHA" "$apk" > "$GITHUB_WORKSPACE/build-artifacts/BUILD-INFO.txt"
+          echo "APK built and ABI checked. Installation and playback on TCL C7K are still untested."
+
+      - name: Upload test APK (no GitHub Release)
+        uses: actions/upload-artifact@cf430e03ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tizentube-cobalt-27-lts-11-armv7-test-apk
+          path: build-artifacts/
+          if-no-files-found: error
+          retention-da: 7ys 711
+      - feature/l1-media-capabilities
+      - main
+    paths:
+      - '.github/workflows/l1-android-armv7-build.yml'
+  workflow_dispatch:
+
+permissions:jobs:
+  source-readiness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            cobalt/android/BUILD.gn
+            cobalt/build/gn.py
+            cobalt/build/configs/android-arm
+            cobalt/build/configs/android_common.gn
+            cobalt/version.h
+            starboard/android/shared/BUILD.gn
+            starboard/android/shared/exoplayer
+            cobalt/android/apk/app/src/main/java/dev/cobalt/media
+            .github/config/android-arm.json
+      - name: Verify ARMv7 APK target and source wiring (not a compilation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          cfg = json.loads(Path('.github/config/android-arm.json').read_text())
+          assert cfg['platforms'] == ['android-arm']
+          assert cfg['test_root_target'] == '//cobalt/android:cobalt_apk'
+          gnargs = Path('cobalt/build/configs/android-arm/args.gn').read_text()
+          assert 'target_cpu = "arm"' in gnargs
+          version = Path('cobalt/version.h').read_text()
+          assert '#define COBALT_VERSION "27.lts.11"' in version
+          build = Path('cobalt/android/BUILD.gn').read_text()
+          assert 'android_apk("cobalt_apk")' in build
+          assert 'androidx_media3_media3_exoplayer_java' in build
+          assert 'media/ExoPlayerBridge.java' in build
+          assert 'media/ExoPlayerManager.java' in build
+          native = Path('starboard/android/shared/BUILD.gn').read_text()
+          assert 'exoplayer/exoplayer_bridge.cc' in native
+          assert Path('starboard/android/shared/exoplayer/exoplayer_bridge.cc').is_file()
+          media = Path('cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java').read_text()
+          assert 'L1 video support:' in media
+          assert 'L1 audio decode support:' in media
+          print('Source readiness PASS: Cobalt 27.lts.11 Android ARMv7 target and Media3 native/Java dependencies')
+          print('This does not compile the APK.')
+          PY
+          
+  contents: read
+
+concurrency:
+  group: l1-android-armv7-apk-${{ github.ref }}
+  cancel-in-progress: false
+  
