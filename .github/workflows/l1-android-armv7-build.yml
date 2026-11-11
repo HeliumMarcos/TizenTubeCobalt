@@ -191,6 +191,7 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$GITHUB_WORKSPACE/cobalt/depot_tools:$PATH"
+          rm -rf cobalt/shell/android/java/res/values-*
           for dir in "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/.." "$GITHUB_WORKSPACE/../.." "$GITHUB_WORKSPACE/cobalt" "$GITHUB_WORKSPACE/cobalt/src"; do
             mkdir -p "$dir/.android"
             cp -f "$HOME/.android/debug.keystore" "$dir/.android/debug.keystore"
