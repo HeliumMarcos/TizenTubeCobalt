@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: |
@@ -49,12 +49,15 @@ jobs:
           cfg = json.loads(Path('.github/config/android-arm.json').read_text())
           assert cfg['platforms'] == ['android-arm']
           assert cfg['test_root_target'] == '//cobalt/android:cobalt_apk'
+
           gnargs = Path('cobalt/build/configs/android-arm/args.gn').read_text()
           assert 'target_cpu = "arm"' in gnargs
+
           version = Path('cobalt/version.h').read_text()
           is_lts_11 = '#define COBALT_VERSION "27.lts.11"' in version
           is_lts_10 = '#define COBALT_VERSION "27.lts.10"' in version
           assert is_lts_11 or is_lts_10
+
           build = Path('cobalt/android/BUILD.gn').read_text()
           assert 'android_apk("cobalt_apk")' in build
           if is_lts_11:
@@ -64,38 +67,65 @@ jobs:
               native = Path('starboard/android/shared/BUILD.gn').read_text()
               assert 'exoplayer/exoplayer_bridge.cc' in native
               assert Path('starboard/android/shared/exoplayer/exoplayer_bridge.cc').is_file()
+
           assert Path('cobalt/android/apk/app/src/main/java/dev/cobalt/media/AudioOutputManager.java').is_file()
           assert Path('cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java').is_file()
+
           print('Source readiness PASS: Android ARMv7 APK target and media files verified.')
           PY
 
   build-apk-armv7:
     needs: source-readiness
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
-    steps:
-      - name: Install depot_tools and system dependencies
+    timeout-minutes: 360
+    defaults:
+      run:
         shell: bash
+    env:
+      DEPOT_TOOLS_UPDATE: '0'
+      DEPOT_TOOLS_REPORT_BUILD: '0'
+      DEPOT_TOOLS_COLLECT_METRICS: '0'
+      DEPOT_TOOLS_METRICS: '0'
+      GCLIENT_PY3: '1'
+    steps:
+      - name: Free runner disk space for Chromium/Cobalt Android build
+        run: |
+          set -euo pipefail
+          df -h
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost \
+            /usr/local/lib/android \
+            /usr/local/graalvm \
+            /usr/local/.ghcup || true
+          df -h
+
+      - name: Install depot_tools and system dependencies
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            git python3 ninja-build openjdk-17-jdk-headless zip unzip curl
+            git python3 ninja-build openjdk-17-jdk-headless zip unzip curl pkg-config
           mkdir -p "$GITHUB_WORKSPACE/cobalt"
-          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git "$GITHUB_WORKSPACE/cobalt/depot_tools"
+          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$GITHUB_WORKSPACE/cobalt/depot_tools"
+          echo "$GITHUB_WORKSPACE/cobalt/depot_tools" >> "$GITHUB_PATH"
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: cobalt/src
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Configure gclient workspace
+      - name: Configure gclient workspace for Android
         working-directory: cobalt
         run: |
           set -euo pipefail
           export PATH="$GITHUB_WORKSPACE/cobalt/depot_tools:$PATH"
           gclient config --unmanaged --name=src "https://github.com/${GITHUB_REPOSITORY}.git"
+          printf "\ntarget_os = ['android']\n" >> .gclient
+          gclient validate
 
       - name: Synchronize Android dependencies
         working-directory: cobalt
@@ -140,7 +170,7 @@ jobs:
           printf 'Commit: %s\nPlatform: android-arm\nGN target: //cobalt/android:cobalt_apk\nSource: %s\n' "$GITHUB_SHA" "$apk" > "$GITHUB_WORKSPACE/build-artifacts/BUILD-INFO.txt"
 
       - name: Upload test APK (no GitHub Release)
-        uses: actions/upload-artifact@cf430e03ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tizentube-cobalt-armv7-test-apk
           path: build-artifacts/
