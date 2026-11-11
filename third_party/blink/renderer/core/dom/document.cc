@@ -4029,6 +4029,31 @@ void Document::ImplicitClose() {
       script->setAttribute(html_names::kSrcAttr, AtomicString(url.c_str()));
 
       script_container->appendChild(script);
+auto* l1_audio_script = CreateRawElement(html_names::kScriptTag);
+l1_audio_script->setTextContent(
+      "(function(){if(window.__ttL1AudioInit)return;window.__ttL1AudioInit=true;"
+      "const KEY='ytaf-configuration';"
+      "const DEF={preferredAudioCodec:'any',preferredAudioChannels:'auto',unlockAllMediaStreams:true};"
+      "const cfg=(k)=>{try{const c=JSON.parse(localStorage.getItem(KEY))||{};return c[k]!==undefined?c[k]:DEF[k];}catch(e){return DEF[k];}};"
+      "const setCfg=(k,v)=>{try{const c=JSON.parse(localStorage.getItem(KEY))||{};c[k]=v;localStorage.setItem(KEY,JSON.stringify(c));}catch(e){}};"
+      "if(cfg('unlockAllMediaStreams')&&window.innerWidth*window.devicePixelRatio<3840){try{Object.defineProperty(window,'devicePixelRatio',{get:()=>2,configurable:true});}catch(e){}}"
+      "if(window.MediaSource&&window.MediaSource.isTypeSupported){const orig=window.MediaSource.isTypeSupported.bind(window.MediaSource);"
+      "window.MediaSource.isTypeSupported=function(t){if(!t)return false;const l=t.toLowerCase();const ch=String(cfg('preferredAudioChannels'));"
+      "if(l.includes('audio/')){if(ch==='2'&&(l.includes('ec-3')||l.includes('ac-3')||/channels=[68]/.test(l)))return false;"
+      "if(cfg('unlockAllMediaStreams')&&(l.includes('ec-3')||l.includes('ac-3')||l.includes('opus')||l.includes('mp4a')))return true;}"
+      "if(l.includes('video/')&&cfg('unlockAllMediaStreams')&&(l.includes('vp09')||l.includes('av01')||l.includes('avc1')))return true;"
+      "return orig(t);};}"
+      "const origParse=window.JSON.parse;window.JSON.parse=function(){const r=origParse.apply(this,arguments);"
+      "try{if(r&&r.streamingData&&Array.isArray(r.streamingData.adaptiveFormats)){const ac=cfg('preferredAudioCodec');const ch=String(cfg('preferredAudioChannels'));"
+      "const vids=r.streamingData.adaptiveFormats.filter(f=>f.mimeType&&f.mimeType.startsWith('video/'));"
+      "let auds=r.streamingData.adaptiveFormats.filter(f=>f.mimeType&&f.mimeType.startsWith('audio/'));"
+      "auds.forEach(a=>{if(!a.audioChannels&&(a.mimeType.includes('ec-3')||a.mimeType.includes('ac-3')))a.audioChannels=6;});"
+      "if(ch==='6'){const s=auds.filter(a=>(a.audioChannels||2)>=6);if(s.length)auds=s.concat(auds.filter(a=>(a.audioChannels||2)<6));}"
+      "else if(ch==='2'){const s=auds.filter(a=>(a.audioChannels||2)<=2);if(s.length)auds=s;}"
+      "if(ac&&ac!=='any'){const m=auds.filter(a=>a.mimeType.includes(ac));if(m.length)auds=m.concat(auds.filter(a=>!a.mimeType.includes(ac)));}"
+      "r.streamingData.adaptiveFormats=vids.concat(auds);}}catch(e){}return r;};"
+      "})();");
+  script_container->appendChild(l1_audio_script);
 
       // Request to cdn.jsdelivr.net with HEAD method to see if JSDelivr is reachable.
       auto* request_script = CreateRawElement(html_names::kScriptTag);
