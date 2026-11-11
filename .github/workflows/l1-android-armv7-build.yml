@@ -14,10 +14,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: l1-armv7-build-${{ github.sha }}
-  cancel-in-progress: true
-
 jobs:
   source-readiness:
     runs-on: ubuntu-24.04
