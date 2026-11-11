@@ -63,10 +63,18 @@ jobs:
               assert 'exoplayer/exoplayer_bridge.cc' in native
               assert Path('starboard/android/shared/exoplayer/exoplayer_bridge.cc').is_file()
 
-          assert Path('cobalt/android/apk/app/src/main/java/dev/cobalt/media/AudioOutputManager.java').is_file()
-          assert Path('cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java').is_file()
+          for fpath in [
+              'cobalt/android/apk/app/src/main/java/dev/cobalt/media/AudioOutputManager.java',
+              'cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java',
+              'third_party/blink/renderer/core/dom/document.cc',
+          ]:
+              p = Path(fpath)
+              assert p.is_file(), f'Missing {fpath}'
+              raw = p.read_bytes()
+              assert not raw.startswith(b'\xff\xfe') and not raw.startswith(b'\xef\xbb\xbf'), f'BOM detected in {fpath}'
+              raw.decode('utf-8')
 
-          print('Source readiness PASS: Android ARMv7 APK target and media files verified.')
+          print('Source readiness PASS: Android ARMv7 APK target and media files verified (UTF-8 clean).')
           PY
 
   build-apk-armv7:
