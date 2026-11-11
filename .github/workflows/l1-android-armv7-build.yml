@@ -119,6 +119,22 @@ jobs:
           source "$GITHUB_WORKSPACE/cobalt/depot_tools/bootstrap_python3" && bootstrap_python3
           test -f "$GITHUB_WORKSPACE/cobalt/depot_tools/python3_bin_reldir.txt"
           build_telemetry opt-out || true
+          mkdir -p "$HOME/.android"
+          if [[ ! -f "$HOME/.android/debug.keystore" ]]; then
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          for dir in "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/.." "$GITHUB_WORKSPACE/../.." "$GITHUB_WORKSPACE/cobalt" "$GITHUB_WORKSPACE/cobalt/src"; do
+            mkdir -p "$dir/.android"
+            cp -f "$HOME/.android/debug.keystore" "$dir/.android/debug.keystore"
+          done
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -171,8 +187,13 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$GITHUB_WORKSPACE/cobalt/depot_tools:$PATH"
+          for dir in "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/.." "$GITHUB_WORKSPACE/../.." "$GITHUB_WORKSPACE/cobalt" "$GITHUB_WORKSPACE/cobalt/src"; do
+            mkdir -p "$dir/.android"
+            cp -f "$HOME/.android/debug.keystore" "$dir/.android/debug.keystore"
+          done
           python3 cobalt/build/gn.py -p android-arm -c devel --no-rbe --no-check
-          gn desc out/android-arm_devel //cobalt/android:cobalt_apk type
+          gn args --list --short --overrides-only out/android-arm_devel
+          test -f out/android-arm_devel/build.ninja
           echo 'GN generation completed for target_cpu=arm.'
 
       - name: Compile Java, JNI and native code; package test APK
