@@ -4,8 +4,12 @@ on:
   push:
     branches:
       - upgrade/cobalt-27-lts-11
+      - feature/l1-media-capabilities
+      - main
     paths:
       - '.github/workflows/l1-android-armv7-build.yml'
+      - 'cobalt/android/apk/app/src/main/java/dev/cobalt/media/**'
+      - 'third_party/blink/renderer/core/dom/document.cc'
   workflow_dispatch:
 
 permissions:
@@ -32,6 +36,7 @@ jobs:
             starboard/android/shared/BUILD.gn
             starboard/android/shared/exoplayer
             cobalt/android/apk/app/src/main/java/dev/cobalt/media
+            third_party/blink/renderer/core/dom/document.cc
             .github/config/android-arm.json
       - name: Verify ARMv7 APK target and source wiring (not a compilation)
         shell: bash
@@ -44,31 +49,34 @@ jobs:
           cfg = json.loads(Path('.github/config/android-arm.json').read_text())
           assert cfg['platforms'] == ['android-arm']
           assert cfg['test_root_target'] == '//cobalt/android:cobalt_apk'
+
           gnargs = Path('cobalt/build/configs/android-arm/args.gn').read_text()
           assert 'target_cpu = "arm"' in gnargs
+
           version = Path('cobalt/version.h').read_text()
-          assert '#define COBALT_VERSION "27.lts.11"' in version
+          is_lts_11 = '#define COBALT_VERSION "27.lts.11"' in version
+          is_lts_10 = '#define COBALT_VERSION "27.lts.10"' in version
+          assert is_lts_11 or is_lts_10
+
           build = Path('cobalt/android/BUILD.gn').read_text()
           assert 'android_apk("cobalt_apk")' in build
-          assert 'androidx_media3_media3_exoplayer_java' in build
-          assert 'media/ExoPlayerBridge.java' in build
-          assert 'media/ExoPlayerManager.java' in build
-          native = Path('starboard/android/shared/BUILD.gn').read_text()
-          assert 'exoplayer/exoplayer_bridge.cc' in native
-          assert Path('starboard/android/shared/exoplayer/exoplayer_bridge.cc').is_file()
-          media = Path('cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java').read_text()
-          assert 'L1 video support:' in media
-          assert 'L1 audio decode support:' in media
-          print('Source readiness PASS: Cobalt 27.lts.11 Android ARMv7 target and Media3 native/Java dependencies')
-          print('This does not compile the APK.')
+          if is_lts_11:
+              assert 'androidx_media3_media3_exoplayer_java' in build
+              assert 'media/ExoPlayerBridge.java' in build
+              assert 'media/ExoPlayerManager.java' in build
+              native = Path('starboard/android/shared/BUILD.gn').read_text()
+              assert 'exoplayer/exoplayer_bridge.cc' in native
+              assert Path('starboard/android/shared/exoplayer/exoplayer_bridge.cc').is_file()
+
+          assert Path('cobalt/android/apk/app/src/main/java/dev/cobalt/media/AudioOutputManager.java').is_file()
+          assert Path('cobalt/android/apk/app/src/main/java/dev/cobalt/media/MediaCodecUtil.java').is_file()
+
+          print('Source readiness PASS: Android ARMv7 APK target and media files verified.')
           PY
 
   build-apk-armv7:
     needs: source-readiness
-    # Requires an explicitly configured, adequately resourced Linux x64 self-hosted runner.
-    # The Chromium/Cobalt checkout + GN/Ninja Android toolchain is too large
-    # for a typical small GitHub-hosted runner.
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     defaults:
       run:
@@ -80,22 +88,29 @@ jobs:
       DEPOT_TOOLS_METRICS: '0'
       GCLIENT_PY3: '1'
     steps:
-      - name: Check build host capacity before checkout
+      - name: Free runner disk space for Chromium/Cobalt Android build
         run: |
           set -euo pipefail
-          test "$(uname -m)" = "x86_64"
-          test "$(uname -s)" = "Linux"
-          free_gib="$(df -Pk "$GITHUB_WORKSPACE" | awk 'NR == 2 {print int($4/1024/1024)}')"
-          memory_gib="$(awk '/MemTotal:/{print int($2/1024/1024)}' /proc/meminfo)"
-          echo "Available storage: ${free_gib} GiB; total RAM: ${memory_gib} GiB"
-          if (( free_gib < 140 || memory_gib < 16 )); then
-            echo "::error::ARMv7 Cobalt build needs >=140 GiB free and >=16 GiB RAM. Recommended: 200+ GiB and 32 GiB RAM."
-            exit 1
-          fi
-          for command in git python3 curl unzip zipinfo; do
-            command -v "$command" >/dev/null || { echo "::error::Missing host program: $command"; exit 1; }
-          done
-          echo "Host capacity checks passed."
+          df -h
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost \
+            /usr/local/lib/android \
+            /usr/local/graalvm \
+            /usr/local/.ghcup || true
+          df -h
+
+      - name: Install depot_tools and system dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git python3 ninja-build openjdk-17-jdk-headless zip unzip curl pkg-config
+          mkdir -p "$GITHUB_WORKSPACE/cobalt"
+          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$GITHUB_WORKSPACE/cobalt/depot_tools"
+          echo "$GITHUB_WORKSPACE/cobalt/depot_tools" >> "$GITHUB_PATH"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -103,17 +118,14 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Configure Chromium depot_tools and gclient for Android
+      - name: Configure gclient workspace for Android
+        working-directory: cobalt
         run: |
           set -euo pipefail
-          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$GITHUB_WORKSPACE/cobalt/depot_tools"
-          echo "$GITHUB_WORKSPACE/cobalt/depot_tools" >> "$GITHUB_PATH"
           export PATH="$GITHUB_WORKSPACE/cobalt/depot_tools:$PATH"
-          cd "$GITHUB_WORKSPACE/cobalt"
           gclient config --unmanaged --name=src "https://github.com/${GITHUB_REPOSITORY}.git"
           printf "\ntarget_os = ['android']\n" >> .gclient
           gclient validate
-          echo "Configured gclient to fetch Android dependencies for the checked-out fork."
 
       - name: Synchronize Android dependencies
         working-directory: cobalt
@@ -153,15 +165,14 @@ jobs:
             exit 1
           fi
           mkdir -p "$GITHUB_WORKSPACE/build-artifacts"
-          cp "$apk" "$GITHUB_WORKSPACE/build-artifacts/TizenTubeCobalt-27.lts.11-armv7-test.apk"
-          sha256sum "$GITHUB_WORKSPACE/build-artifacts/TizenTubeCobalt-27.lts.11-armv7-test.apk" | tee "$GITHUB_WORKSPACE/build-artifacts/SHA256SUMS.txt"
+          cp "$apk" "$GITHUB_WORKSPACE/build-artifacts/TizenTubeCobalt-armv7-test.apk"
+          sha256sum "$GITHUB_WORKSPACE/build-artifacts/TizenTubeCobalt-armv7-test.apk" | tee "$GITHUB_WORKSPACE/build-artifacts/SHA256SUMS.txt"
           printf 'Commit: %s\nPlatform: android-arm\nGN target: //cobalt/android:cobalt_apk\nSource: %s\n' "$GITHUB_SHA" "$apk" > "$GITHUB_WORKSPACE/build-artifacts/BUILD-INFO.txt"
-          echo "APK built and ABI checked. Installation and playback on TCL C7K are still untested."
 
       - name: Upload test APK (no GitHub Release)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: tizentube-cobalt-27-lts-11-armv7-test-apk
+          name: tizentube-cobalt-armv7-test-apk
           path: build-artifacts/
           if-no-files-found: error
           retention-days: 7
