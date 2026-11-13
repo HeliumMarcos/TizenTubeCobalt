@@ -384,7 +384,7 @@ Cinco TXT fornecidos pelo usuário, gerados **13/11/2026** com `yt-dlp 2026.10.2
 - **URL:** https://www.youtube.com/watch?v=nK2WNlhKRZk
 - **Título:** *5.1 Surround I Dinosaur World 4K HDR I Dolby Atmos Support*.
 - **Arquivo:** `TubeRush_nK2WNlhKRZk_20261113_014104.txt`.
-- **Duração:** a consultar no cabeçalho completo do TXT. **Entradas:** 404; 272 contendo vídeo, 142 contendo áudio, 170 `MISSING POT`, 61 ITAGs básicos e 16 entradas de áudio com ≥6 canais.
+- **Duração:** 126 s. **Entradas:** 404; 272 contendo vídeo, 142 contendo áudio, 170 `MISSING POT`, 61 ITAGs básicos e 16 entradas de áudio com ≥6 canais.
 - **Vídeo:** `642-hls` VP9 Profile 2 HDR10 2160p30 ≈25,137 Mbps; `701` AV1 HDR10 2160p30 ≈22,079 Mbps; `337` VP9 Profile 2 HDR10 2160p30 ≈20,800 Mbps; `625-hls` VP9 SDR 2160p30 ≈18,910 Mbps.
 - **Áudio relevante:** **`380` AC-3, 6 canais, 48 kHz, ≈384,144 kbps**; **`328` E-AC-3, 6 canais, 48 kHz, ≈384,144 kbps**; também AAC/Opus estéreo.
 - **Evidência do aparelho anterior:** DD+ reconhecido pela LG S95TR; seleção de DD podia falhar e remover faixa da lista. Código de v1.0.0 alterado, mas correção não validada.
@@ -424,7 +424,7 @@ Cinco TXT fornecidos pelo usuário, gerados **13/11/2026** com `yt-dlp 2026.10.2
 - **URL:** https://www.youtube.com/watch?v=hCixBMdgGxI
 - **Título:** *TENTE NÃO RIR — VÍDEOS MUITO ENGRAÇADOS — NÍVEL IMPOSSÍVEL #19*.
 - **Arquivo:** `TubeRush_hCixBMdgGxI_20261113_014336.txt`.
-- **Entradas:** 470; 270 contendo vídeo, 226 contendo áudio, 198 `MISSING POT`, 49 ITAGs básicos; sem áudio ≥6 canais reportado.
+- **Duração:** 3.861 s. **Entradas:** 470; 270 contendo vídeo, 226 contendo áudio, 198 `MISSING POT`, 49 ITAGs básicos; sem áudio ≥6 canais reportado.
 - **Máximo encontrado:** `616-hls` **1920×1080, 30 FPS, VP9 SDR**, ≈**5,457 Mbps**. Também `96-hls`/`270-hls` 1080p30 AVC SDR ≈4,704 Mbps. **Nenhum 2160p** listado.
 - **Idiomas:** **pt-BR original**, **en-US**, **es-US** e identificadores equivalentes como `en`; várias faixas AAC/Opus e variantes DRC. Uma mesma família de ITAG pode aparecer com idiomas/áudios distintos.
 - **Teste A:** global 2160p + AV1 não pode travar vídeo nem forçar 4K fictício; selecionar melhor 1080p compatível e permitir 720p, 480p e demais resoluções disponíveis.
