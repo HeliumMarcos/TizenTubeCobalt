@@ -1,6 +1,6 @@
 # TubeRush — Organização segura da raiz do repositório
 
-**Status em 13/11/2026:** estrutura de sete entradas **ainda não implementada**. O README e a identidade visual do TubeRush já estão modernizados. Este documento descreve o trabalho necessário para reorganizar o *código* sem quebrar a compilação.
+**Status em 13/11/2026:** a **migração estrutural para sete entradas foi criada e verificada** na branch temporária `refactor/seven-entry-root` (execução [GitHub Actions #43372028178](https://github.com/HeliumMarcos/TubeRush/actions/runs/43372028178)). **O `main` ainda está na estrutura original.** Não foi comprovado que o motor Cobalt compila na nova localização. O repositório continua associado ao fork original.
 
 ## Padrão solicitado
 
@@ -18,7 +18,7 @@ README.md
 
 **Total: sete entradas na raiz.** O TubeRush herdou aproximadamente 96 entradas de primeiro nível do Chromium/Cobalt. O número de linhas mostrado pelo GitHub é uma consequência direta dos arquivos e diretórios versionados na raiz; o README, o `.gitignore` ou uma configuração da página do GitHub **não conseguem ocultar essas entradas**.
 
-## Por que não mover tudo imediatamente para app/
+## Riscos e adequações pendentes depois de mover para app/
 
 A estrutura atual contém `.gn`, `BUILD.gn`, `DEPS`, `.gitmodules`, `third_party/`, `cobalt/`, `starboard/`, `media/`, `build/`, `base/`, `components/`, `v8/` e diversas dependências com caminhos relativos ou convencionados por depot_tools, GN, gclient, submódulos e scripts CI. Mover tudo para `app/` pode romper:
 
@@ -29,9 +29,9 @@ A estrutura atual contém `.gn`, `BUILD.gn`, `DEPS`, `.gitmodules`, `third_party
 - Documentação e links que hoje usam `cobalt/`, `starboard/` e `third_party/` a partir da raiz.
 - Sincronização com upstream e aplicação futura de correções da branch `upgrade/cobalt-27-lts-11`.
 
-**Não executar uma mudança destrutiva apenas para cumprir a estética**, sem prova de compilação, testes de reprodução e rollback. Uma árvore de sete entradas, sozinha, não garante que o projeto continue utilizável.
+**A estrutura Git foi movida na branch de migração**, preservando os mesmos blobs/árvores para 91 entradas. Falta ajustar o pipeline. Em particular, `.gitmodules` passou para `app/.gitmodules` (o Git espera esse arquivo na raiz para submódulos), o código GN/DEPS está em `app/`, enquanto os workflows atuais usam caminhos como `cobalt/...` e checkout `cobalt/src`. **Não mesclar até corrigir e validar esses caminhos**, sem prova de build e reprodução.
 
-## Plano de migração (trabalho futuro)
+## Fases: estrutura preparada; build e compatibilidade pendentes
 
 1. **Baseline e preservação:** marcar commit de referência, registrar SHA-256 do APK, versão e assinatura, além dos resultados na TCL C7K + LG S95TR. Não fazer force-push nem remover o branch de upgrade.
 2. **Criar branch de migração temporária**, sem alterar o `main` enquanto a compilação não passar. A reorganização final deve preservar apenas `main` e `upgrade/cobalt-27-lts-11` se essa for a política desejada; excluir o branch temporário depois do merge validado.
@@ -46,8 +46,8 @@ A estrutura atual contém `.gn`, `BUILD.gn`, `DEPS`, `.gitmodules`, `third_party
 
 ## Critérios de aceite específicos para a raiz
 
-- [ ] Exatamente sete entradas e seus nomes conforme o padrão acima.
-- [ ] `app/` contém código Cobalt/Chromium com todas as dependências rastreadas e licenças válidas.
+- [x] Exatamente sete entradas e seus nomes conforme o padrão acima **na branch de migração**.
+- [x] `app/` contém as 91 entradas originais movidas **sem alteração dos SHAs dos objetos Git**. Revisão de checkout/submódulos ainda pendente.
 - [ ] Checkout limpo e sincronização de dependências funcionam.
 - [ ] Configuração e compilação geram APK Android armv7.
 - [ ] App abre na TCL C7K e preserva DD+ 5.1 comprovadamente funcional.
@@ -55,4 +55,4 @@ A estrutura atual contém `.gn`, `BUILD.gn`, `DEPS`, `.gitmodules`, `third_party
 - [ ] Branch do upgrade Cobalt permanece independente; `main` não perde histórico.
 - [ ] A página inicial oferece banner, download, documentação e histórico de novidades de maneira clara.
 
-> **Execução atual:** somente modernização de `README.md` e identidade gráfica. Não mover a árvore Chromium/Cobalt para `app/` sem aprovação dos testes.
+> **Execução atual:** nova estrutura verificada na branch `refactor/seven-entry-root`, commit de migração `ee8bab4dd4d001967bdf0cdfd57b1a4ea17c54d4`; `main` intocado. O workflow realizou verificação de estrutura, **não compilação do APK**. Ver [Actions #43372028178](https://github.com/HeliumMarcos/TubeRush/actions/runs/43372028178). A desvinculação do fork é separada: o GitHub exige repositório inferior a 1 GB para usar `Leave fork network`, mas este possui cerca de 3,3 GB; não apagar nem recriar o repositório para forçar a desvinculação sem backup e plano de retenção de Releases/Issues/configurações.
