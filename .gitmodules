@@ -1,5 +1,5 @@
-# TubeRush seven-entry root: map upstream Cobalt gitlinks into app/.
-# The unmodified Cobalt mapping remains at app/.gitmodules for CI engine checkout.
+# TubeRush seven-entry root: gitlink paths in app/; docs/ remains at repo root.
+# Original upstream Cobalt metadata remains in app/.gitmodules for CI engine view.
 [submodule "third_party/clang-format/script"]
 	path = app/third_party/clang-format/script
 	url = https://chromium.googlesource.com/external/github.com/llvm/llvm-project/clang/tools/clang-format
@@ -53,7 +53,7 @@
 	url = https://lbshell-internal.googlesource.com/third_party/internal
 	gclient-condition = checkout_cobalt_internal
 [submodule "docs/website"]
-	path = app/docs/website
+	path = docs/website
 	url = https://chromium.googlesource.com/website
 [submodule "ios/third_party/earl_grey2/src"]
 	path = app/ios/third_party/earl_grey2/src
@@ -904,7 +904,7 @@
 	url = https://chrome-internal.googlesource.com/chrome/data/webkit_plugin_tests
 	gclient-condition = checkout_src_internal
 [submodule "third_party/angle/third_party/EGL-Registry/src"]
-    path = app/"third_party/angle/third_party/EGL-Registry/src"
+    path = "app/third_party/angle/third_party/EGL-Registry/src"
 [submodule "third_party/angle/testing"]
 	path = app/third_party/angle/testing
 [submodule "third_party/angle/build"]
