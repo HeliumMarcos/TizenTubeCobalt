@@ -20,51 +20,16 @@ namespace cobalt {
 // Injected via WebLocalFrame::ExecuteScript at document start so YouTube TV CSP
 // cannot block it. Unlocks 4K/HDR & 5.1/Stereo audio, formats each video stream
 // in the native YouTube TV "Qualidade" menu with resolution, FPS, bitrate and codec
-// (SmartTube style: "2160p, 30fps, 82.49Mbps, av1"), and adds individual audio
-// stream selection (Dolby Digital Plus ec-3, AC-3, Opus iamf 5.1) directly in the
-// native YouTube TV "Áudio" menu without any floating overlays or test artifacts.
+// (SmartTube style: "2160p, 30fps, 24.33Mbps, vp9 HDR", "2160p, 30fps, 82.49Mbps, av1 HDR"),
+// and lists all available audio streams (Dolby Digital Plus ec-3 5.1, Dolby Digital ac-3 5.1,
+// Opus Immersive iamf 5.1, Stereo) directly in the native YouTube TV "Faixa de áudio" menu!
 inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
 (function () {
   if (window.__ttL1Init) return;
   window.__ttL1Init = true;
 
-  const CFG_KEY = 'ytaf-configuration';
   const SESSION_PIN_PREFIX = 'ttL1Pin_';
   const SESSION_RESUME_PREFIX = 'ttL1Resume_';
-  const DEF = {
-    preferredVideoCodec: 'any',
-    l1VideoCodec: 'any',
-    l1HdrMode: 'any',
-    l1MaxFps: 0,
-    preferredAudioCodec: 'any',
-    preferredAudioChannels: 'auto',
-    unlockAllMediaStreams: true,
-    l1Force4kViewport: true
-  };
-
-  function readCfg() {
-    try {
-      return Object.assign({}, DEF, JSON.parse(localStorage.getItem(CFG_KEY) || '{}') || {});
-    } catch (e) {
-      return Object.assign({}, DEF);
-    }
-  }
-
-  function cfg(k) {
-    const o = readCfg();
-    return o[k] !== undefined ? o[k] : DEF[k];
-  }
-
-  function setCfg(k, v) {
-    try {
-      const o = JSON.parse(localStorage.getItem(CFG_KEY) || '{}') || {};
-      o[k] = v;
-      localStorage.setItem(CFG_KEY, JSON.stringify(o));
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
 
   // 1. Force 4K viewport so YouTube TV serves 4K 2160p assets and formats.
   try {
@@ -100,15 +65,31 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     }
   } catch (e) {}
 
-  // 3. MediaSource.isTypeSupported & mediaCapabilities.decodingInfo.
+  // Negative probe check helper: YouTube verifies browser capabilities by probing
+  // intentionally invalid parameters (.nl) such as channels=99, width=99999,
+  // bitrate=2e9, catavision, etc. If the browser returns true for these, YouTube
+  // assumes capability querying is broken and turns OFF multi-channel 5.1 surround sound!
+  function isNegativeProbe(str) {
+    if (!str) return false;
+    const l = String(str).toLowerCase();
+    if (/channels\s*=\s*(99|[7-9]\d|\d{3,})/i.test(l)) return true;
+    if (/(width|height)\s*=\s*(99999|\d{5,})/i.test(l)) return true;
+    if (/framerate\s*=\s*(9999|\d{4,})/i.test(l)) return true;
+    if (/bitrate\s*=\s*(2000000000|2e9|\d{10,})/i.test(l)) return true;
+    if (/catavision|nope|invalidformat/i.test(l)) return true;
+    return false;
+  }
+
+  // 3. MediaSource.isTypeSupported
   try {
     if (window.MediaSource && window.MediaSource.isTypeSupported) {
       const origIsType = window.MediaSource.isTypeSupported.bind(window.MediaSource);
       window.MediaSource.isTypeSupported = function (typeStr) {
         if (!typeStr) return false;
+        if (isNegativeProbe(typeStr)) return false;
         const lower = String(typeStr).toLowerCase();
         if (lower.includes('audio/')) {
-          if (lower.includes('ec-3') || lower.includes('ac-3') || lower.includes('opus') || lower.includes('mp4a')) {
+          if (lower.includes('ec-3') || lower.includes('ac-3') || lower.includes('iamf') || lower.includes('opus') || lower.includes('mp4a')) {
             return true;
           }
         }
@@ -122,32 +103,94 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     }
   } catch (e) {}
 
+  // 4. HTMLMediaElement.prototype.canPlayType
   try {
-    if (navigator.mediaCapabilities && navigator.mediaCapabilities.decodingInfo) {
-      const origDecInfo = navigator.mediaCapabilities.decodingInfo.bind(navigator.mediaCapabilities);
-      navigator.mediaCapabilities.decodingInfo = async function (config) {
-        const res = await origDecInfo(config);
-        try {
-          if (!config) return res;
-          if (config.video && config.video.contentType) {
-            const vl = String(config.video.contentType).toLowerCase();
-            if (vl.includes('vp09') || vl.includes('vp9') || vl.includes('av01') || vl.includes('avc1')) {
-              return { supported: true, smooth: true, powerEfficient: true, keySystemAccess: res ? res.keySystemAccess : undefined };
-            }
+    if (window.HTMLMediaElement && HTMLMediaElement.prototype.canPlayType) {
+      const origCanPlay = HTMLMediaElement.prototype.canPlayType;
+      HTMLMediaElement.prototype.canPlayType = function (typeStr) {
+        if (!typeStr) return '';
+        if (isNegativeProbe(typeStr)) return '';
+        const lower = String(typeStr).toLowerCase();
+        if (lower.includes('audio/')) {
+          if (lower.includes('ec-3') || lower.includes('ac-3') || lower.includes('iamf') || lower.includes('opus') || lower.includes('mp4a')) {
+            return 'probably';
           }
-          if (config.audio && config.audio.contentType) {
-            const al = String(config.audio.contentType).toLowerCase();
-            if (al.includes('ec-3') || al.includes('ac-3') || al.includes('opus') || al.includes('mp4a')) {
-              return { supported: true, smooth: true, powerEfficient: true, keySystemAccess: res ? res.keySystemAccess : undefined };
-            }
+        }
+        if (lower.includes('video/')) {
+          if (lower.includes('vp09') || lower.includes('vp9') || lower.includes('av01') || lower.includes('avc1')) {
+            return 'probably';
           }
-        } catch (e) {}
-        return res;
+        }
+        return origCanPlay.call(this, typeStr);
       };
     }
   } catch (e) {}
 
-  // 4. Raw stream catalog & pinning state.
+  // 5. navigator.mediaCapabilities.decodingInfo
+  try {
+    if (navigator.mediaCapabilities && navigator.mediaCapabilities.decodingInfo) {
+      const origDecInfo = navigator.mediaCapabilities.decodingInfo.bind(navigator.mediaCapabilities);
+      navigator.mediaCapabilities.decodingInfo = async function (config) {
+        try {
+          if (config && config.audio) {
+            const ch = Number(config.audio.channels);
+            if (ch > 6 || ch === 99) {
+              return { supported: false, smooth: false, powerEfficient: false };
+            }
+          }
+          if (config && config.video && config.video.contentType) {
+            const vl = String(config.video.contentType).toLowerCase();
+            if (vl.includes('vp09') || vl.includes('vp9') || vl.includes('av01') || vl.includes('avc1')) {
+              return { supported: true, smooth: true, powerEfficient: true };
+            }
+          }
+          if (config && config.audio && config.audio.contentType) {
+            const al = String(config.audio.contentType).toLowerCase();
+            if (al.includes('ec-3') || al.includes('ac-3') || al.includes('iamf') || al.includes('opus') || al.includes('mp4a')) {
+              return { supported: true, smooth: true, powerEfficient: true };
+            }
+          }
+        } catch (e) {}
+        return origDecInfo(config);
+      };
+    }
+  } catch (e) {}
+
+  // 6. Web Audio AudioDestinationNode maxChannelCount (5.1 = 6 channels)
+  try {
+    if (window.AudioDestinationNode && AudioDestinationNode.prototype) {
+      Object.defineProperty(AudioDestinationNode.prototype, 'maxChannelCount', {
+        get: () => 6,
+        configurable: true
+      });
+    }
+  } catch (e) {}
+
+  // 7. Inject 5.1 Surround Sound experiment flags into YouTube TV config
+  function applyExperimentFlags() {
+    try {
+      if (window.ytcfg && window.ytcfg.get) {
+        const exp = window.ytcfg.get('EXPERIMENT_FLAGS') || {};
+        Object.assign(exp, {
+          html5_enable_5_1_audio: true,
+          html5_prefer_5_1_audio: true,
+          html5_honor_user_51_preference: true,
+          html5_enable_eac3: true,
+          html5_enable_ac3: true,
+          html5_enable_iamf_audio: true,
+          html5_ugc_vod_audio_51: true,
+          html5_onesie_51_audio: true,
+          html5_kabuki_drm_live_51_default_off: false,
+          html5_ytv_surround_toggle_default_off: false
+        });
+        window.ytcfg.set({ EXPERIMENT_FLAGS: exp });
+      }
+    } catch (e) {}
+  }
+  applyExperimentFlags();
+  setInterval(applyExperimentFlags, 2000);
+
+  // 8. Stream catalog & format pinning
   const catalog = (window.__ttL1Catalog = window.__ttL1Catalog || {});
   const pinnedMap = (window.__ttL1Pinned = window.__ttL1Pinned || {});
 
@@ -219,7 +262,7 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         const codec = detectVideoCodecLabel(f.mimeType, hdr);
         const fps = Number(f.fps || 30);
         const mbps = (Number(f.bitrate || f.averageBitrate || 0) / 1000000).toFixed(2);
-        // SmartTube naming convention: "2160p, 30fps, 82.49Mbps, av1"
+        // SmartTube naming convention: "2160p, 30fps, 24.33Mbps, vp9 HDR"
         f.qualityLabel = `${f.height}p, ${fps}fps, ${mbps}Mbps, ${codec}`;
         rawVids.push(f);
       } else if (f.mimeType.startsWith('audio/')) {
@@ -248,19 +291,21 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     let vids = rawVids;
     let auds = rawAuds;
 
-    // Prioritize pinned video format
+    // Strict Video Pinning: When user explicitly selects a quality/format,
+    // only feed that video stream so YouTube player CANNOT starve or downgrade!
     if (pin.videoItag) {
       const match = rawVids.filter(f => Number(f.itag) === Number(pin.videoItag));
       if (match.length) {
-        vids = match.concat(rawVids.filter(f => Number(f.itag) !== Number(pin.videoItag)));
+        vids = match;
       }
     }
 
-    // Prioritize 5.1 / pinned audio format
+    // Strict Audio Pinning: When user explicitly selects an audio track (e.g. Dolby Digital 5.1),
+    // only feed that audio stream so YouTube player plays it directly!
     if (pin.audioItag) {
       const match = rawAuds.filter(a => Number(a.itag) === Number(pin.audioItag));
       if (match.length) {
-        auds = match.concat(rawAuds.filter(a => Number(a.itag) !== Number(pin.audioItag)));
+        auds = match;
       }
     } else {
       // By default prioritize 5.1 multi-channel surround streams (ec-3, ac-3, iamf)
@@ -349,12 +394,12 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
   }
   setInterval(checkResume, 1000);
 
-  // 5. Hook native YouTube TV Player quality methods so the native menu lists all formats!
+  // 9. Hook native YouTube TV Player API methods for seamless UI integration!
   function hookPlayerApi() {
     const p = document.getElementById('ytlr-player__player-container-player');
-    if (!p || p.__ttL1PlayerHooked) return;
-    p.__ttL1PlayerHooked = true;
+    if (!p) return;
 
+    // A. Native "Qualidade" Menu: Return all video formats without deduplicating codecs!
     const origQDataMsg = p.getAvailableQualityDataAndMessaging;
     p.getAvailableQualityDataAndMessaging = function () {
       const vid = getCurrentVideoId();
@@ -364,7 +409,8 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         const qualityData = cat.videos.map(f => {
           return {
             qualityLabel: f.qualityLabel,
-            quality: 'hd' + (f.height || 1080),
+            // Assign unique quality key per format so YouTube Leanback doesn't collapse AV1/VP9/AVC!
+            quality: 'fmt_' + f.itag,
             isPlayable: true,
             formatItag: f.itag,
             isCurrent: pin.videoItag ? (Number(pin.videoItag) === Number(f.itag)) : undefined
@@ -375,132 +421,124 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       return origQDataMsg ? origQDataMsg.apply(this, arguments) : { qualityData: [] };
     };
 
-    const origQData = p.getAvailableQualityData;
     p.getAvailableQualityData = function () {
       const res = p.getAvailableQualityDataAndMessaging();
-      return (res && res.qualityData) || (origQData ? origQData.apply(this, arguments) : []);
+      return (res && res.qualityData) || [];
     };
 
-    const origQLabels = p.getAvailableQualityLabels;
     p.getAvailableQualityLabels = function () {
       const qd = p.getAvailableQualityData();
       if (qd && qd.length) return qd.map(q => q.qualityLabel);
-      return origQLabels ? origQLabels.apply(this, arguments) : [];
+      return [];
     };
 
-    // When the user selects a quality from the native Leanback quality menu:
+    // When the user clicks a quality in the native "Qualidade" menu:
     const origSetQuality = p.setPlaybackQualityRange;
     p.setPlaybackQualityRange = function (minQ, maxQ) {
       const vid = getCurrentVideoId();
       const cat = (vid && catalog[vid]) || null;
+      const qStr = String(maxQ || minQ || '');
+      if (qStr === 'auto' || qStr === 'highres') {
+        setPin(vid, { videoItag: null });
+        reloadPlayerAtCurrentTime(vid);
+        return origSetQuality ? origSetQuality.apply(this, arguments) : undefined;
+      }
       if (cat && cat.videos && cat.videos.length) {
-        // Find matching format if quality matches
-        const qStr = String(maxQ || minQ || '');
-        const match = cat.videos.find(v => v.qualityLabel === qStr || ('hd' + v.height) === qStr);
-        if (match) {
-          setPin(vid, { videoItag: match.itag });
+        let itagMatch = null;
+        const itagRx = qStr.match(/fmt_(\d+)/);
+        if (itagRx) itagMatch = Number(itagRx[1]);
+        if (!itagMatch) {
+          const match = cat.videos.find(v => v.qualityLabel === qStr || ('fmt_' + v.itag) === qStr || ('hd' + v.height) === qStr);
+          if (match) itagMatch = Number(match.itag);
+        }
+        if (itagMatch) {
+          setPin(vid, { videoItag: itagMatch });
+          reloadPlayerAtCurrentTime(vid);
+          return;
         }
       }
       return origSetQuality ? origSetQuality.apply(this, arguments) : undefined;
     };
+
+    p.setPlaybackQuality = function (q) {
+      return p.setPlaybackQualityRange(q, q);
+    };
+
+    // B. Native "Faixa de áudio" Menu: List all surround (5.1 ec-3, ac-3, iamf) & stereo tracks!
+    p.getAvailableAudioTracks = function () {
+      const vid = getCurrentVideoId();
+      const cat = (vid && catalog[vid]) || null;
+      if (cat && cat.audios && cat.audios.length) {
+        const pin = getPin(vid);
+        const curItag = pin.audioItag ? Number(pin.audioItag) : Number(cat.audios[0].itag);
+        return cat.audios.map(a => ({
+          id: String(a.itag),
+          xb: {
+            id: String(a.itag),
+            name: a.displayName,
+            isDefault: (Number(a.itag) === curItag),
+            isAutoDubbed: false
+          },
+          captionTracks: [],
+          captionsInitialState: 'CAPTIONS_INITIAL_STATE_UNKNOWN'
+        }));
+      }
+      return [];
+    };
+
+    p.getAudioTrack = function () {
+      const vid = getCurrentVideoId();
+      const cat = (vid && catalog[vid]) || null;
+      if (cat && cat.audios && cat.audios.length) {
+        const pin = getPin(vid);
+        const curItag = pin.audioItag ? Number(pin.audioItag) : Number(cat.audios[0].itag);
+        const active = cat.audios.find(a => Number(a.itag) === curItag) || cat.audios[0];
+        return {
+          id: String(active.itag),
+          xb: {
+            id: String(active.itag),
+            name: active.displayName,
+            isDefault: true,
+            isAutoDubbed: false
+          },
+          captionTracks: [],
+          captionsInitialState: 'CAPTIONS_INITIAL_STATE_UNKNOWN'
+        };
+      }
+      return { id: 'und', xb: { id: 'und', name: 'Default', isDefault: true, isAutoDubbed: false }, captionTracks: [] };
+    };
+
+    // When the user clicks an audio track in the native "Faixa de áudio" menu:
+    p.setAudioTrack = function (track) {
+      if (track) {
+        const tid = String(track.id || (track.xb && track.xb.id) || '');
+        const numItag = parseInt(tid, 10);
+        if (numItag) {
+          const vid = getCurrentVideoId();
+          setPin(vid, { audioItag: numItag });
+          reloadPlayerAtCurrentTime(vid);
+        }
+      }
+    };
+
+    // C. Force 5.1 Surround Sound capability flags on player
+    p.hasSupportedAudio51Tracks = function () {
+      const vid = getCurrentVideoId();
+      const cat = (vid && catalog[vid]) || null;
+      if (cat && cat.audios) {
+        return cat.audios.some(a => (a.audioChannels || 2) >= 6);
+      }
+      return true;
+    };
+    p.getUserAudio51Preference = function () {
+      return 1;
+    };
+    p.isAudioIamf = function () {
+      return true;
+    };
   }
 
   setInterval(hookPlayerApi, 1000);
-
-  // 6. Seamless Native "Áudio" Dialog Integration:
-  // Dynamically adds selectable audio streams (Dolby Digital Plus 5.1, AC-3 5.1, Opus 5.1, Stereo)
-  // directly inside the native YouTube TV "Áudio" settings panel!
-  function integrateAudioMenu() {
-    const vid = getCurrentVideoId();
-    const cat = (vid && catalog[vid]) || null;
-    if (!cat || !cat.audios || !cat.audios.length) return;
-
-    // Detect if the native Audio panel or list is currently visible
-    const allHeaders = document.querySelectorAll('*');
-    let audioPanelContainer = null;
-
-    for (const el of allHeaders) {
-      if (el.children.length === 0 && el.innerText && el.innerText.trim() === '\u00c1udio') {
-        const parent = el.closest('[role="dialog"], .ytlr-dialog, .ytlr-panel, .ytlr-menu-renderer, .app-quality-root') || el.parentElement;
-        if (parent) {
-          audioPanelContainer = parent;
-          break;
-        }
-      }
-    }
-
-    if (!audioPanelContainer) return;
-    if (audioPanelContainer.querySelector('.tt-l1-audio-selector-section')) return;
-
-    const pin = getPin(vid);
-    const activeItag = pin.audioItag ? Number(pin.audioItag) : Number(cat.audios[0].itag);
-
-    const section = document.createElement('div');
-    section.className = 'tt-l1-audio-selector-section';
-    section.style.cssText = 'display:flex; flex-direction:column; gap:8px; margin-top:16px; padding:0 8px; border-top:1px solid rgba(255,255,255,0.15); padding-top:16px;';
-
-    const header = document.createElement('div');
-    header.style.cssText = 'font-size:16px; font-weight:600; color:rgba(255,255,255,0.7); text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;';
-    header.textContent = 'Faixas de \u00c1udio Dispon\u00edveis';
-    section.appendChild(header);
-
-    for (const a of cat.audios) {
-      const isSelected = (Number(a.itag) === activeItag);
-      const row = document.createElement('div');
-      row.tabIndex = 0;
-      row.className = 'tt-l1-audio-row';
-      row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:12px 18px; border-radius:12px; background:' +
-        (isSelected ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.06)') + '; color:#fff; font-size:18px; cursor:pointer; outline:none; transition:background 0.15s ease;';
-
-      const label = document.createElement('span');
-      label.textContent = a.displayName;
-      row.appendChild(label);
-
-      const check = document.createElement('span');
-      check.textContent = isSelected ? '\u2713' : '';
-      check.style.cssText = 'font-size:20px; font-weight:bold; color:#3ea6ff; margin-left:12px;';
-      row.appendChild(check);
-
-      row.addEventListener('focus', () => {
-        row.style.background = 'rgba(255,255,255,0.35)';
-      });
-      row.addEventListener('blur', () => {
-        row.style.background = isSelected ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.06)';
-      });
-
-      const selectTrack = (e) => {
-        if (e) { e.preventDefault(); e.stopPropagation(); }
-        setPin(vid, { audioItag: a.itag });
-        reloadPlayerAtCurrentTime(vid);
-      };
-
-      row.addEventListener('click', selectTrack);
-      row.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.keyCode === 13) selectTrack(e);
-      });
-
-      section.appendChild(row);
-    }
-
-    // Append to list container in the dialog
-    const listTarget = audioPanelContainer.querySelector('[role="menu"], [role="listbox"], .ytlr-list-view') || audioPanelContainer;
-    listTarget.appendChild(section);
-  }
-
-  // MutationObserver to watch for menu dialogs opening
-  const observer = new MutationObserver(() => {
-    try {
-      integrateAudioMenu();
-    } catch (e) {}
-  });
-
-  if (document.documentElement) {
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-  } else {
-    window.addEventListener('DOMContentLoaded', () => {
-      observer.observe(document.documentElement, { childList: true, subtree: true });
-    });
-  }
 })();
 )L1SCRIPT";
 
