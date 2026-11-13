@@ -216,7 +216,8 @@ public class AudioOutputManager {
         for (int count : channelCounts) {
           outDeviceInfo.channels = Math.max(outDeviceInfo.channels, count);
         }
-    if (outDeviceInfo.channels < 6 && (outDeviceInfo.type == AudioDeviceInfo.TYPE_HDMI || outDeviceInfo.type == AudioDeviceInfo.TYPE_HDMI_ARC || outDeviceInfo.type == TYPE_HDMI_EARC_COMPAT)) {
+    // Always report at least 6 channels (5.1 surround) on TV platforms
+    if (outDeviceInfo.channels < 6) {
       outDeviceInfo.channels = 6;
     }
       }

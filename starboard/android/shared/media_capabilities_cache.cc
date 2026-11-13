@@ -206,6 +206,22 @@ bool AudioCodecCapability::IsBitrateSupported(int bitrate) const {
   return supported_bitrates_.Contains(bitrate);
 }
 
+namespace {
+
+Range WidenHardware4kBitrateRange(Range range,
+                                   bool is_software_decoder,
+                                   const Range& supported_widths) {
+  // MediaCodecInfo intersects codec bitrate-range with level limits (e.g.,
+  // AV1 Main Tier Level 5.1 caps at 40 Mbps even when HW decodes 80+ Mbps).
+  if (!is_software_decoder && supported_widths.Contains(3840) &&
+      range.maximum > 0 && range.maximum < 100000000) {
+    range.maximum = 100000000;
+  }
+  return range;
+}
+
+}  // namespace
+
 VideoCodecCapability::VideoCodecCapability(JNIEnv* env,
                                            const CodecCapabilityInfo& info)
     : CodecCapability(info),
@@ -218,9 +234,12 @@ VideoCodecCapability::VideoCodecCapability(JNIEnv* env,
       supported_heights_(GetRange(env,
                                   j_video_capabilities_,
                                   &Java_MediaCodecUtil_getVideoHeightRange)),
-      supported_bitrates_(GetRange(env,
-                                   j_video_capabilities_,
-                                   &Java_MediaCodecUtil_getVideoBitrateRange)),
+      supported_bitrates_(WidenHardware4kBitrateRange(
+          GetRange(env,
+                   j_video_capabilities_,
+                   &Java_MediaCodecUtil_getVideoBitrateRange),
+          info.is_software_decoder,
+          supported_widths_)),
       supported_frame_rates_(
           GetRange(env,
                    j_video_capabilities_,

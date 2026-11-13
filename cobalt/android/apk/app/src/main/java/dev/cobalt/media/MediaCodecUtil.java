@@ -49,6 +49,7 @@ public class MediaCodecUtil {
   private static final String SECURE_DECODER_SUFFIX = ".secure";
   private static final String VP9_MIME_TYPE = "video/x-vnd.on2.vp9";
   private static final String AV1_MIME_TYPE = "video/av01";
+  private static final String HEVC_MIME_TYPE = "video/hevc";
 
   static {
     if (Build.BRAND.equals("google")) {
@@ -480,10 +481,13 @@ public class MediaCodecUtil {
         }
       }
 
+      final boolean verboseMediaLog =
+          android.util.Log.isLoggable(TAG, android.util.Log.VERBOSE);
       for (String mimeType : codecInfo.getSupportedTypes()) {
         // L1 diagnostics: report the codecs exposed to Cobalt before quality selection.
-        // Keep this at verbose level to avoid flooding normal playback logs.
-        if (mimeType.startsWith("video/") || mimeType.startsWith("audio/")) {
+        // Keep this guarded by isLoggable to avoid extra binder calls when verbose is off.
+        if (verboseMediaLog
+            && (mimeType.startsWith("video/") || mimeType.startsWith("audio/"))) {
           Log.v(
               TAG,
               "L1 codec capability: name=%s mime=%s software=%s",
@@ -492,7 +496,7 @@ public class MediaCodecUtil {
               isSoftwareDecoder(codecInfo));
         }
         CodecCapabilityInfo capabilityInfo = new CodecCapabilityInfo(codecInfo, mimeType);
-        if (mimeType.startsWith("video/")) {
+        if (verboseMediaLog && mimeType.startsWith("video/")) {
           MediaCodecInfo.VideoCapabilities videoCapabilities =
               capabilityInfo.getVideoCapabilities();
           if (videoCapabilities != null) {
@@ -505,7 +509,7 @@ public class MediaCodecUtil {
                 videoCapabilities.areSizeAndRateSupported(3840, 2160 , 60),
                 capabilityInfo.isHdrCapable());
           }
-        } else if (mimeType.startsWith("audio/")) {
+        } else if (verboseMediaLog && mimeType.startsWith("audio/")) {
           MediaCodecInfo.AudioCapabilities audioCapabilities =
               capabilityInfo.getAudioCapabilities();
           if (audioCapabilities != null) {
@@ -553,11 +557,23 @@ public class MediaCodecUtil {
     for (CodecProfileLevel codecProfileLevel : codecProfileLevels) {
       if (mimeType.equals(VP9_MIME_TYPE)) {
         if (codecProfileLevel.profile == CodecProfileLevel.VP9Profile2HDR
-            || codecProfileLevel.profile == CodecProfileLevel.VP9Profile3HDR) {
+            || codecProfileLevel.profile == CodecProfileLevel.VP9Profile3HDR
+            || (Build.VERSION.SDK_INT >= 29
+                && (codecProfileLevel.profile == CodecProfileLevel.VP9Profile2HDR10Plus
+                    || codecProfileLevel.profile == CodecProfileLevel.VP9Profile3HDR10Plus))) {
           return true;
         }
       } else if (mimeType.equals(AV1_MIME_TYPE)) {
-        if (codecProfileLevel.profile == CodecProfileLevel.AV1ProfileMain10HDR10) {
+        if (codecProfileLevel.profile == CodecProfileLevel.AV1ProfileMain10
+            || codecProfileLevel.profile == CodecProfileLevel.AV1ProfileMain10HDR10
+            || (Build.VERSION.SDK_INT >= 29
+                && codecProfileLevel.profile == CodecProfileLevel.AV1ProfileMain10HDR10Plus)) {
+          return true;
+        }
+      } else if (mimeType.equals(HEVC_MIME_TYPE) && Build.VERSION.SDK_INT >= 24) {
+        if (codecProfileLevel.profile == CodecProfileLevel.HEVCProfileMain10HDR10
+            || (Build.VERSION.SDK_INT >= 29
+                && codecProfileLevel.profile == CodecProfileLevel.HEVCProfileMain10HDR10Plus)) {
           return true;
         }
       }

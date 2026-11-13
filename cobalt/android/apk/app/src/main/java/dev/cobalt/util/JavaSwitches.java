@@ -14,6 +14,8 @@
 
 package dev.cobalt.util;
 
+import android.app.ActivityManager;
+import android.content.Context;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -41,7 +43,7 @@ public class JavaSwitches {
 
   public static final String DEFAULT_INITIAL_OLD_SPACE_SIZE = "64";
   public static final String DEFAULT_MAX_OLD_SPACE_SIZE = "512";
-  public static final String DEFAULT_FORCE_GPU_MEM_AVAILABLE_MB = "64";
+  public static final String DEFAULT_FORCE_GPU_MEM_AVAILABLE_MB = "128";
   public static final String DEFAULT_FORCE_DEVICE_SCALE_FACTOR = "1";
 
   public static final String ENABLE_QUIC = "EnableQUIC";
@@ -287,10 +289,32 @@ public class JavaSwitches {
     }
   }
 
+  private static boolean isTrueLowEndRamDevice() {
+    try {
+      Context context = ContextUtils.getApplicationContext();
+      if (context == null) {
+        return false;
+      }
+      ActivityManager am =
+          (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+      if (am == null) {
+        return false;
+      }
+      ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+      am.getMemoryInfo(memInfo);
+      // Only enable low-end throttling on devices with less than 1.5 GB total RAM.
+      return memInfo.totalMem > 0 && memInfo.totalMem < 1536L * 1024L * 1024L;
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
   public static List<String> getDefaultCommandLineArgs() {
     List<String> defaultArgs = new ArrayList<>();
     defaultArgs.add(DEFAULT_DISABLE_QUIC);
-    defaultArgs.add(ENABLE_LOW_END_DEVICE_MODE_SWITCH);
+    if (isTrueLowEndRamDevice()) {
+      defaultArgs.add(ENABLE_LOW_END_DEVICE_MODE_SWITCH);
+    }
     if (!"arm64".equals(BuildInfo.getArch()) && !"x86_64".equals(BuildInfo.getArch())) {
       defaultArgs.add("--force-gpu-mem-available-mb=" + DEFAULT_FORCE_GPU_MEM_AVAILABLE_MB);
     }
@@ -327,7 +351,8 @@ public class JavaSwitches {
     // TODO(cobalt, b/563373348): Investigate performance impact on high-end devices. Use Java
     // switch due to IsLowEndDevice called before Finch is initialized. We should migrate to Finch
     // if high-end device benefits from removing this low-end-device-mode flag.
-    if (!javaSwitches.containsKey(JavaSwitches.DISABLE_LOW_END_DEVICE_MODE)) {
+    if (isTrueLowEndRamDevice()
+        && !javaSwitches.containsKey(JavaSwitches.DISABLE_LOW_END_DEVICE_MODE)) {
       extraCommandLineArgs.add(ENABLE_LOW_END_DEVICE_MODE_SWITCH);
     }
 

@@ -251,8 +251,9 @@ bool AudioOutputManager::GetAudioConfiguration(
   configuration->number_of_channels =
       Java_OutputDeviceInfo_getChannels(env, j_output_device_info);
 
-  if (configuration->connector != kSbMediaAudioConnectorHdmi) {
-    configuration->number_of_channels = 2;
+  // Allow multi-channel audio (e.g. 5.1 / 6 channels) on TV audio outputs.
+  if (configuration->number_of_channels < 6) {
+    configuration->number_of_channels = 6;
   }
 
   return true;

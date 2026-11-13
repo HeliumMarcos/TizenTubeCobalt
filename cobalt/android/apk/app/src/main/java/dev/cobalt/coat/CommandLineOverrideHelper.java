@@ -72,9 +72,6 @@ public final class CommandLineOverrideHelper {
     // Disable decommitting pooled pages to prevent virtual memory fragmentation.
     paramOverrides.add("--no-decommit-pooled-pages");
 
-    // Disable v8 concurrent marking by default.
-    paramOverrides.add("--no-concurrent-marking");
-
     return paramOverrides;
   }
 
@@ -83,13 +80,11 @@ public final class CommandLineOverrideHelper {
 
     // Pass javascript console log to adb log.
     paramOverrides.add("LogJsConsoleMessages");
-    // Limit decoded image cache to 32 mbytes.
-    paramOverrides.add("LimitImageDecodeCacheSize:mb/24");
+    // Limit decoded image cache to 48 mbytes for smoother TV UI scrolling.
+    paramOverrides.add("LimitImageDecodeCacheSize:mb/48");
     // It is important to use a feature override instead of the
     // rendering switch, to make sure certain devices are excluded.
     paramOverrides.add("DefaultPassthroughCommandDecoder");
-    // Compositor switch to reduce prepaint tile cache size
-    paramOverrides.add("SmallerInterestArea");
     paramOverrides.add("ReclaimPrepaintTilesWhenIdle");
     paramOverrides.add("ReclaimOldPrepaintTiles");
     paramOverrides.add("WebAudioRemoveAudioDestinationResampler");
