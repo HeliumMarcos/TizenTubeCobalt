@@ -32,6 +32,7 @@ on:
       - 'app/cobalt/**'
       - 'app/starboard/**'
 
+  workflow_call:
   workflow_dispatch:
 
 permissions:
