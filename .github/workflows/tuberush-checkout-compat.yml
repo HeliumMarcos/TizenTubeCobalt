@@ -25,6 +25,7 @@ jobs:
         with:
           persist-credentials: false
           filter: blob:none
+          sparse-checkout-cone: false
           sparse-checkout: |
             .github
             app/.gn
@@ -76,6 +77,7 @@ jobs:
           printf 'fixture\n' >"$testroot/.github/test.txt"
           git -C "$testroot" add -A
           git -C "$testroot" commit -qm 'Synthetic TubeRush tree'
+          expected_tree="$(git -C "$testroot" rev-parse HEAD:app)"
           bash .github/scripts/tuberush-ci-cobalt-source.sh "$testroot"
           test -f "$testroot/DEPS"
           test -f "$testroot/.gn"
@@ -83,7 +85,6 @@ jobs:
           test -f "$testroot/cobalt/build/gn.py"
           test -f "$testroot/starboard/android/shared/BUILD.gn"
           test ! -e "$testroot/app/.gn"
-          test "$(git -C "$testroot" rev-parse HEAD^{tree})" = \
-            "$(git -C "$testroot" rev-parse HEAD:^{tree})" 2>/dev/null || true
+          test "$(git -C "$testroot" rev-parse 'HEAD^{tree}')" = "$expected_tree"
           test "$(git -C "$testroot" ls-tree --name-only HEAD | wc -l)" -ge 1
           echo 'Synthetic GN/gclient source-root preparation PASS.'
