@@ -11,6 +11,7 @@ on:
       - 'app/DEPS'
       - 'app/.gn'
       - 'app/.gitmodules'
+      - '.gitmodules'
   workflow_dispatch:
 
 permissions:
@@ -28,6 +29,7 @@ jobs:
           sparse-checkout-cone: false
           sparse-checkout: |
             .github
+            .gitmodules
             app/.gn
             app/DEPS
             app/.gitmodules
@@ -39,9 +41,11 @@ jobs:
           set -euo pipefail
           git ls-tree --name-only HEAD | tee /tmp/tuberush-root.txt
           test "$(wc -l </tmp/tuberush-root.txt)" -eq 7
-          for x in .gitattributes .github .gitignore AGENTS.md README.md app docs; do
+          for x in .github .gitignore .gitmodules AGENTS.md README.md app docs; do
             grep -Fxq "$x" /tmp/tuberush-root.txt
           done
+          git cat-file -e 'HEAD:.gitmodules'
+          git cat-file -e 'HEAD:app/.gitattributes'
           git cat-file -e 'HEAD:app/.gn'
           git cat-file -e 'HEAD:app/DEPS'
           git cat-file -e 'HEAD:app/.gitmodules'
