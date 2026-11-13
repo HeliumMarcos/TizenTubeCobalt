@@ -1,0 +1,16 @@
+name: Validate TubeRush migrated Android ARMv7 build
+
+on:
+  push:
+    branches:
+      - refactor/seven-entry-root
+    paths:
+      - '.github/workflows/tuberush-armv7-migration-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-cobalt:
+    uses: ./.github/workflows/l1-android-armv7-build.yml
