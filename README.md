@@ -27,7 +27,7 @@ O **TubeRush** é uma versão alternativa do YouTube para Android TV / Google TV
 ## Instalação
 
 1. Abra a [release mais recente do TubeRush](https://github.com/HeliumMarcos/TubeRush/releases/latest).
-2. Para dispositivos Android compatíveis com **ARMv7**, baixe o arquivo **\`TubeRush-v1.0.0-armeabi-v7a.apk\`** na release v1.0.0, ou o APK correspondente à arquitetura indicado em versões futuras.
+2. Para dispositivos Android compatíveis com **ARMv7**, baixe o arquivo **`TubeRush-v1.0.0-armeabi-v7a.apk`** na release v1.0.0, ou o APK correspondente à arquitetura indicado em versões futuras.
 3. Instale o APK na TV, utilizando um gerenciador de arquivos ou ADB e autorizando a instalação pelo Android quando solicitado.
 4. Abra o **TubeRush** e configure preferências de vídeo e áudio. Consulte as limitações e testes em andamento antes de considerar um formato garantido.
 
@@ -78,12 +78,12 @@ A matriz de testes, os arquivos afetados e os critérios de aceitação estão n
 
 ## Desenvolvimento
 
-Este repositório mantém, por enquanto, a **árvore original de código e ferramentas do Chromium/Cobalt na raiz**, pois o build depende desses caminhos e dos arquivos de infraestrutura (\`.gn\`, \`DEPS\`, \`BUILD.gn\`, \`third_party/\`, \`cobalt/\` e outros). A estrutura compacta de sete entradas, utilizada em outros projetos HeliumMarcos, **ainda depende de migração e validação técnica**. Não mova diretórios do motor apenas por estética.
+Este repositório mantém, por enquanto, a **árvore original de código e ferramentas do Chromium/Cobalt na raiz**, pois o build depende desses caminhos e dos arquivos de infraestrutura (`.gn`, `DEPS`, `BUILD.gn`, `third_party/`, `cobalt/` e outros). A estrutura compacta de sete entradas, utilizada em outros projetos HeliumMarcos, **ainda depende de migração e validação técnica**. Não mova diretórios do motor apenas por estética.
 
-- **Código e integração:** \`cobalt/\`, \`starboard/\`, \`third_party/\` e demais dependências originais.
-- **Compilação Android:** \`.github/workflows/l1-android-armv7-build.yml\`.
-- **Plano de execução:** \`docs/TUBERUSH_PLANO_MESTRE.md\`.
-- **Instruções para agentes e contribuidores:** \`AGENTS.md\`.
+- **Código e integração:** `cobalt/`, `starboard/`, `third_party/` e demais dependências originais.
+- **Compilação Android:** `.github/workflows/l1-android-armv7-build.yml`.
+- **Plano de execução:** `docs/TUBERUSH_PLANO_MESTRE.md`.
+- **Instruções para agentes e contribuidores:** `AGENTS.md`.
 
 ## Créditos e licenças
 
