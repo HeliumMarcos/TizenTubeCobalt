@@ -1,6 +1,6 @@
 # TubeRush — Organização segura da raiz do repositório
 
-**Status em 13/11/2026:** a **migração estrutural para sete entradas foi criada e verificada** na branch temporária `refactor/seven-entry-root` (execução [GitHub Actions #43372028178](https://github.com/HeliumMarcos/TubeRush/actions/runs/43372028178)). **O `main` ainda está na estrutura original.** Não foi comprovado que o motor Cobalt compila na nova localização. O repositório continua associado ao fork original.
+**Status em 13/11/2026:** a **migração estrutural para sete entradas foi criada e verificada** na branch `refactor/seven-entry-root`. O checkout dos submódulos e o adaptador temporário do Cobalt também passaram no [GitHub Actions #43374563065](https://github.com/HeliumMarcos/TubeRush/actions/runs/43374563065). **O `main` ainda está na estrutura original.** O build APK completo e a reprodução na TV ainda não foram validados. A associação de fork continua.
 
 ## Padrão solicitado
 
@@ -10,7 +10,7 @@ O padrão que os repositórios HeliumVideoTools, YTMusicRush, SyncMasterPro e Do
 .github/
 app/
 docs/
-.gitattributes
+.gitmodules
 .gitignore
 AGENTS.md
 README.md
@@ -29,13 +29,13 @@ A estrutura atual contém `.gn`, `BUILD.gn`, `DEPS`, `.gitmodules`, `third_party
 - Documentação e links que hoje usam `cobalt/`, `starboard/` e `third_party/` a partir da raiz.
 - Sincronização com upstream e aplicação futura de correções da branch `upgrade/cobalt-27-lts-11`.
 
-**A estrutura Git foi movida na branch de migração**, preservando os mesmos blobs/árvores para 91 entradas. Falta ajustar o pipeline. Em particular, `.gitmodules` passou para `app/.gitmodules` (o Git espera esse arquivo na raiz para submódulos), o código GN/DEPS está em `app/`, enquanto os workflows atuais usam caminhos como `cobalt/...` e checkout `cobalt/src`. **Não mesclar até corrigir e validar esses caminhos**, sem prova de build e reprodução.
+**Correções já implementadas na branch:** raiz com sete entradas; 340 submódulos remapeados para `app/` e `docs/website` mantido na raiz; configuração original em `app/.gitmodules` preservada para o checkout do motor. Os atributos originais estão em `app/.gitattributes`, liberando a entrada de raiz para `.gitmodules`. O workflow de compilação foi adaptado para criar um commit **local e temporário** que recompõe `app/` como raiz GN/DEPS e reinsere `docs/`. O Actions aprovou checkout, inspeção do Git tree e teste sintético do adaptador. **Ainda falta sincronizar dependências reais e gerar um APK**; não mesclar até o build e a validação de reprodução serem comprovados.
 
 ## Fases: estrutura preparada; build e compatibilidade pendentes
 
 1. **Baseline e preservação:** marcar commit de referência, registrar SHA-256 do APK, versão e assinatura, além dos resultados na TCL C7K + LG S95TR. Não fazer force-push nem remover o branch de upgrade.
 2. **Criar branch de migração temporária**, sem alterar o `main` enquanto a compilação não passar. A reorganização final deve preservar apenas `main` e `upgrade/cobalt-27-lts-11` se essa for a política desejada; excluir o branch temporário depois do merge validado.
-3. **Mover a árvore completa do Chromium/Cobalt para `app/`**, mantendo a estrutura *interna* relativa do motor. Separar de lá somente os arquivos de apresentação e colaboração do projeto: `.github/`, `docs/`, `README.md`, `AGENTS.md`, `.gitattributes`, `.gitignore`. Evitar duplicações de diretórios de origem. Preservar licenças e notices.
+3. **Mover a árvore completa do Chromium/Cobalt para `app/`**, mantendo a estrutura *interna* relativa do motor. Separar de lá somente os arquivos de apresentação e colaboração do projeto: `.github/`, `docs/`, `README.md`, `AGENTS.md`, `.gitmodules`, `.gitignore`. Evitar duplicações de diretórios de origem. Preservar licenças e notices.
 4. **Adaptar ferramentas e scripts** ao novo root do motor: encontrar todos os `DEPS`, invocações `gclient`, `gn`, `ninja`, `autoninja`, ferramentas Python e caminhos relativos; revisar se alguma dependência requer checkout com nome `src`, em vez de `app`.
 5. **Ajustar submódulos e dependências**: mapeamento de paths, `.gitmodules`, hooks, subprocessos e acessos ao git root; preservar URL e revisão de cada dependência.
 6. **Ajustar CI**: artefatos, gatilhos, cache e diretório de trabalho nos workflows; documentação de compilação para quem clonar do zero; não publicar build não testado.
@@ -48,11 +48,12 @@ A estrutura atual contém `.gn`, `BUILD.gn`, `DEPS`, `.gitmodules`, `third_party
 
 - [x] Exatamente sete entradas e seus nomes conforme o padrão acima **na branch de migração**.
 - [x] `app/` contém as 91 entradas originais movidas **sem alteração dos SHAs dos objetos Git**. Revisão de checkout/submódulos ainda pendente.
-- [ ] Checkout limpo e sincronização de dependências funcionam.
+- [x] Checkout limpo do GitHub Actions e verificação sintética do adaptador funcionam.
+- [ ] Sincronização real do `DEPS`/gclient e geração de código GN funcionam.
 - [ ] Configuração e compilação geram APK Android armv7.
 - [ ] App abre na TCL C7K e preserva DD+ 5.1 comprovadamente funcional.
 - [ ] Os menus, pinning de qualidade, logs e atualização pelos Releases seguem funcionando conforme seus próprios critérios de validação.
-- [ ] Branch do upgrade Cobalt permanece independente; `main` não perde histórico.
+- [x] Branch do upgrade Cobalt permanece independente; `main` não perde histórico.
 - [ ] A página inicial oferece banner, download, documentação e histórico de novidades de maneira clara.
 
-> **Execução atual:** nova estrutura verificada na branch `refactor/seven-entry-root`, commit de migração `ee8bab4dd4d001967bdf0cdfd57b1a4ea17c54d4`; `main` intocado. O workflow realizou verificação de estrutura, **não compilação do APK**. Ver [Actions #43372028178](https://github.com/HeliumMarcos/TubeRush/actions/runs/43372028178). A desvinculação do fork é separada: o GitHub exige repositório inferior a 1 GB para usar `Leave fork network`, mas este possui cerca de 3,3 GB; não apagar nem recriar o repositório para forçar a desvinculação sem backup e plano de retenção de Releases/Issues/configurações.
+> **Execução atual:** branch `refactor/seven-entry-root`, [Actions #43374563065](https://github.com/HeliumMarcos/TubeRush/actions/runs/43374563065) com checkout e teste sintético aprovados; `main` preservado. A compilação Android e o teste real da TCL C7K continuam pendentes. A desvinculação do fork é uma tarefa separada: não apagar nem recriar o repositório, pois isso pode perder Releases, Issues, histórico e configurações.
