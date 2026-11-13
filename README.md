@@ -1,56 +1,90 @@
-# 💠 TizenTube Cobalt
-
 <p align="center">
-    <img width="600px" src=".github/assets/TizenTube Cobalt Banner.png">
-    <br>
+  <img src="docs/media/tuberush-banner.svg" width="1200" alt="TubeRush — sua experiência na Google TV. Reprodução de vídeo, codecs e áudio sob seu controle.">
 </p>
 
-**TizenTube Cobalt** is an app based on [Cobalt](https://cobalt.dev) that enhances your favourite streaming website viewing experience by removing ads, adding [SponsorBlock](https://sponsor.ajay.app/) support, and providing useful features like video speed control.
+<h1 align="center">TubeRush</h1>
+
+<p align="center">
+  <strong>YouTube na TV, do seu jeito.</strong>
+</p>
+
+<p align="center">
+  Android TV / Google TV · Cobalt 27 LTS · 4K / HDR · Áudio 5.1
+</p>
+
+<p align="center">
+  <a href="https://github.com/HeliumMarcos/TubeRush/releases/latest"><strong>Baixar APK</strong></a> ·
+  <a href="#instalação">Instalação</a> ·
+  <a href="#recursos">Recursos</a> ·
+  <a href="docs/TUBERUSH_PLANO_MESTRE.md">Plano de melhorias</a> ·
+  <a href="#documentação">Documentação</a>
+</p>
+
+O **TubeRush** é uma versão alternativa do YouTube para Android TV / Google TV, baseada no [TizenTubeCobalt](https://github.com/reisxd/TizenTubeCobalt) e no motor [Cobalt](https://github.com/youtube/cobalt). O projeto busca ampliar o controle sobre **resolução, codec, HDR, taxa de bits e faixas de áudio**, mantendo uma interface adequada ao controle remoto da TV.
+
+> **Estado atual:** versão **v1.0.0 experimental**. Há recursos de vídeo 4K e áudio multicanal integrados à base atual, mas ainda existem correções e testes de compatibilidade pendentes. A presença de um formato no menu **não garante** sua reprodução em todos os dispositivos.
+
+## Instalação
+
+1. Abra a [release mais recente do TubeRush](https://github.com/HeliumMarcos/TubeRush/releases/latest).
+2. Para dispositivos Android compatíveis com **ARMv7**, baixe o arquivo **\`TubeRush-v1.0.0-armeabi-v7a.apk\`** na release v1.0.0, ou o APK correspondente à arquitetura indicado em versões futuras.
+3. Instale o APK na TV, utilizando um gerenciador de arquivos ou ADB e autorizando a instalação pelo Android quando solicitado.
+4. Abra o **TubeRush** e configure preferências de vídeo e áudio. Consulte as limitações e testes em andamento antes de considerar um formato garantido.
+
+**Atualização pelo aplicativo:** a consulta e instalação de novas versões diretamente pelos Releases do TubeRush estão **planejadas**, mas não são anunciadas aqui como recurso pronto. No momento, use as [Releases](https://github.com/HeliumMarcos/TubeRush/releases) para consultar novas versões.
+
+## Recursos
+
+| Área | O que o TubeRush oferece ou está aperfeiçoando | Situação |
+| --- | --- | --- |
+| **Vídeo 4K / HDR** | Descoberta e reprodução com AV1, VP9 e AVC; identificação de resolução, FPS, HDR e bitrate | Em validação |
+| **Menu de qualidade** | Listagem por representação, sem ocultar codecs ou resoluções pela preferência global | Correções planejadas |
+| **Preferências e fallback** | Priorizar a resolução e o codec configurados, sem travar quando o formato não existe | Correções planejadas |
+| **Áudio surround** | Dolby Digital Plus (E-AC-3) e Dolby Digital (AC-3) 5.1, quando disponíveis e compatíveis | DD+ testado; troca de faixas em validação |
+| **Idiomas e faixas** | Faixas de áudio distintas por idioma, canais e codec, sem perder opções | Correções planejadas |
+| **Bitrates elevados** | Pesquisa de representações HLS/DASH/SABR, incluindo VP9 4K60 acima de 100 Mbps anunciado pelo YouTube | Investigação e teste pendentes |
+| **Atualização** | Consultar, baixar e instalar APKs pelos próprios GitHub Releases | Planejado |
+
+As funções herdadas do projeto original incluem integrações como **SponsorBlock**, **DeArrow**, controles de reprodução e bloqueio de anúncios, sujeitas à compatibilidade com o aplicativo do YouTube TV.
 
 <details>
-<summary><strong>What is Cobalt?</strong></summary>
+<summary><strong>O que são Cobalt, ITAG e bitrate?</strong></summary>
 
-Cobalt is a lightweight, cross-platform application container and runtime for HTML5-based apps, originally developed by Google for embedded and resource-constrained devices (like smart TVs, set-top boxes, and game consoles). It implements a subset of the W3C HTML5 standard and runs web apps with high performance on a wide range of hardware.
+- **Cobalt** é o motor usado para executar a experiência web do YouTube TV em dispositivos incorporados, como televisores e set-top boxes.
+- **ITAG** é um identificador de representação de mídia; formatos também diferem por protocolo, cliente, faixa de idioma e perfil de codec.
+- **Bitrate anunciado** é o valor disponibilizado pela origem/manifesto; não é necessariamente o bitrate médio real da reprodução nem a velocidade da conexão.
 
 </details>
 
-## ✨ Features
+## Compatibilidade e testes
 
-- 🛑 **Ad Blocker**: Enjoy your favourite streaming website without interruptions from ads.
-- ❗ **SponsorBlock Support**: Automatically skip sponsored segments in videos.
-- ⏭️ **Video Speed Control**: Adjust playback speed to your preference.
-- 🔺 **[DeArrow](https://dearrow.ajay.app/) Support**: Remove clickbait and misleading video titles.
-- ➕ **More to come!** Request features via [issues](https://github.com/reisxd/TizenTube/issues/new).
+O principal ambiente de validação é uma **TCL C7K com Android/Google TV e soundbar LG S95TR**. A confirmação de **Dolby Digital Plus 5.1** nesse conjunto não implica suporte universal a qualquer outro televisor ou saída de áudio.
 
-## ⬇️ Download
+A auditoria usa cinco vídeos de referência para verificar: qualidade **4K60** e HDR10, alternância **DD+ ↔ DD 5.1**, áudio em múltiplos idiomas, fallback sem 2160p e uma representação **HLS VP9 4K60** de aproximadamente **115,68 Mbps anunciados**. A reprodução efetiva desse último formato ainda depende de verificação no Cobalt.
 
-Get the latest release for your platform:
+A matriz de testes, os arquivos afetados e os critérios de aceitação estão no **[Plano Mestre de Correções e Melhorias](docs/TUBERUSH_PLANO_MESTRE.md)**.
 
-<p align="left">
-    <a href="https://github.com/reisxd/TizenTubeCobalt/releases/latest">
-        <picture>
-            <img width="250px"
-                src=".github/assets/TizenTube Download Latest Release Button.png" />
-        </picture>
-    </a>
-</p>
+## Documentação
 
+| Preciso de… | Abrir |
+| --- | --- |
+| Consultar todas as correções, prioridades e os cinco relatórios de vídeo | [Plano mestre do TubeRush](docs/TUBERUSH_PLANO_MESTRE.md) |
+| Entender a arquitetura de reprodução | [Arquitetura Cobalt/Android](docs/l1-playback-architecture.md) |
+| Conferir as capacidades de mídia e os pontos de integração | [Auditoria de mídia](docs/l1-media-capabilities.md) |
+| Acompanhar a atualização futura do motor Cobalt | [Avaliação de upgrade](docs/l1-cobalt-upgrade-assessment.md) |
+| Entender como organizar a raiz em sete entradas sem quebrar o Cobalt | [Organização da raiz](docs/TUBERUSH_ORGANIZACAO_RAIZ.md) |
+| Ver código-fonte, mudanças e APKs | [Código](https://github.com/HeliumMarcos/TubeRush) · [Releases](https://github.com/HeliumMarcos/TubeRush/releases) |
+| Relatar erros ou sugerir melhorias | [Issues](https://github.com/HeliumMarcos/TubeRush/issues) |
 
-**AFTVNews code:** `6366500`
-> 💡 For a better experience, preferably use TizenTube Cobalt on a [**Google TV certified device.**](https://www.androidtv-guide.com/)
+## Desenvolvimento
 
-## ❓ How to Install
+Este repositório mantém, por enquanto, a **árvore original de código e ferramentas do Chromium/Cobalt na raiz**, pois o build depende desses caminhos e dos arquivos de infraestrutura (\`.gn\`, \`DEPS\`, \`BUILD.gn\`, \`third_party/\`, \`cobalt/\` e outros). A estrutura compacta de sete entradas, utilizada em outros projetos HeliumMarcos, **ainda depende de migração e validação técnica**. Não mova diretórios do motor apenas por estética.
 
-1. Download the latest release from the link above.
-2. Sideload or install the app on your device (using a file manager, ADB, or platform-specific method).
-3. Open the app and enjoy an enhanced streaming experience!
+- **Código e integração:** \`cobalt/\`, \`starboard/\`, \`third_party/\` e demais dependências originais.
+- **Compilação Android:** \`.github/workflows/l1-android-armv7-build.yml\`.
+- **Plano de execução:** \`docs/TUBERUSH_PLANO_MESTRE.md\`.
+- **Instruções para agentes e contribuidores:** \`AGENTS.md\`.
 
-## 🌐 Community & Support
+## Créditos e licenças
 
-| Links |
-| ------------- |
-| [r/TizenTube Subreddit](https://www.reddit.com/r/TizenTube/)  |
-| [Discord Server](https://discord.gg/m2P7v8Y2qR)  | 
-| [Telegram](https://t.me/tizentubeofficial)  |
-| [Matrix Space](https://matrix.to/#/!BLE5ubNYktI30e8K0j:matrix.6513006.xyz)  |
-| [Report Issues / Request Features](https://github.com/reisxd/tizenTubeCobalt/issues)  |
+**TubeRush** é uma personalização independente desenvolvida a partir de projetos de código aberto. Os créditos de [reisxd/TizenTubeCobalt](https://github.com/reisxd/TizenTubeCobalt), [TizenTube](https://github.com/reisxd/TizenTube), [YouTube Cobalt](https://github.com/youtube/cobalt), Chromium e demais componentes continuam pertencendo aos respectivos autores. Consulte os arquivos de licenças e avisos incluídos no código, como [LICENSE](LICENSE), [AUTHORS](AUTHORS) e os avisos específicos das dependências. O TubeRush não é um aplicativo oficial do YouTube ou do Google.
