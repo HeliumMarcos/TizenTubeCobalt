@@ -27,7 +27,7 @@ Este repositório é o **TubeRush**, aplicativo alternativo para Google TV / And
 4. Não forçar `isPlayable` ou capacidades 4K HDR/5.1/IAMF sem evidência; não inventar acesso HLS a partir de ITAG.
 5. Codec preferido Any/AV1/VP9/AVC **não pode esconder** representações alternativas do menu.
 6. Preservar idiomas, codec, DRC e identidade completa da faixa; não deduplicar apenas pelo nome.
-7. Esta branch contém a mudança estrutural para sete entradas; antes de mesclar, ajustar e testar `.gitmodules`, `DEPS`/gclient, GN, workflows e compilação real. Não mesclar no `main` sem testes.
+7. Esta branch já contém a raiz de sete entradas: `.gitmodules` na raiz mapeia submódulos em `app/` e `docs/website`, enquanto `app/.gitmodules` preserva o upstream. O CI recompõe temporariamente `app/` como raiz Cobalt, sem alterar o `main`. O checkout e o teste sintético passaram, mas **não mesclar sem compilação real e validação de reprodução na TV**.
 8. Não commitar segredos, tokens, cookies, endereços de stream assinados ou logs privados.
 9. Não forçar push, reescrever história ou mesclar a branch de upgrade por conveniência.
 10. Criar commits/PRs pequenos por incidente; atualizar testes e o plano com status real.
