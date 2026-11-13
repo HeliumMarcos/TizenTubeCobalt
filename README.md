@@ -78,12 +78,13 @@ A matriz de testes, os arquivos afetados e os critérios de aceitação estão n
 
 ## Desenvolvimento
 
-Este repositório mantém, por enquanto, a **árvore original de código e ferramentas do Chromium/Cobalt na raiz**, pois o build depende desses caminhos e dos arquivos de infraestrutura (`.gn`, `DEPS`, `BUILD.gn`, `third_party/`, `cobalt/` e outros). A estrutura compacta de sete entradas, utilizada em outros projetos HeliumMarcos, **ainda depende de migração e validação técnica**. Não mova diretórios do motor apenas por estética.
+**Estrutura em teste na branch `refactor/seven-entry-root`:** o código Chromium/Cobalt foi movido para `app/`, deixando apenas sete entradas na raiz. **A compilação ainda não foi validada com essa estrutura; o `main` permanece inalterado.** Consulte os [riscos e verificações pendentes](docs/TUBERUSH_ORGANIZACAO_RAIZ.md).
 
-- **Código e integração:** `cobalt/`, `starboard/`, `third_party/` e demais dependências originais.
+- **Código e integração nesta branch:** `app/cobalt/`, `app/starboard/`, `app/third_party/`, `app/.gn` e `app/DEPS`.
 - **Compilação Android:** `.github/workflows/l1-android-armv7-build.yml`.
 - **Plano de execução:** `docs/TUBERUSH_PLANO_MESTRE.md`.
 - **Instruções para agentes e contribuidores:** `AGENTS.md`.
+- **Migração de estrutura:** [workflow no GitHub Actions](https://github.com/HeliumMarcos/TubeRush/actions/runs/43372028178); esta validação não substitui uma compilação Android.
 
 ## Créditos e licenças
 
