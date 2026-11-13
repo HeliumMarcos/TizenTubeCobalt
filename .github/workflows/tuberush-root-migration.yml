@@ -1,0 +1,49 @@
+name: Stage TubeRush seven-entry root migration
+
+on:
+  push:
+    branches:
+      - refactor/seven-entry-root
+    paths:
+      - '.github/scripts/tuberush-migrate-seven-root.sh'
+      - '.github/workflows/tuberush-root-migration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-structure:
+    if: github.repository == 'HeliumMarcos/TubeRush'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout lightweight Git trees
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            .github
+          persist-credentials: true
+
+      - name: Validate and stage seven-root migration in refactor branch only
+        env:
+          GIT_AUTHOR_NAME: TubeRush Migration
+          GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
+          PUSH_MIGRATION: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/tuberush-migrate-seven-root.sh
+
+      - name: Confirm remote refactor branch has seven root entries
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --filter=blob:none origin refactor/seven-entry-root
+          git ls-tree --name-only FETCH_HEAD | tee /tmp/roots.txt
+          test "$(wc -l < /tmp/roots.txt)" -eq 7
+          git ls-tree --name-only FETCH_HEAD | grep -Fxq app
+          git ls-tree FETCH_HEAD app | grep -q tree
+          echo "Root layout verified. The Cobalt build has NOT been tested."
