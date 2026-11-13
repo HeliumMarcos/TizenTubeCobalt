@@ -278,11 +278,15 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     }
 
     if (vid) {
+      const existing = catalog[vid];
+      const newVids = rawVids.slice().sort((a, b) => (b.height - a.height) || (b.bitrate - a.bitrate));
+      const newAuds = rawAuds.slice().sort((a, b) => (b.audioChannels - a.audioChannels) || (b.bitrate - a.bitrate));
       catalog[vid] = {
         videoId: vid,
-        title: (obj.videoDetails && obj.videoDetails.title) || '',
-        videos: rawVids.slice().sort((a, b) => (b.height - a.height) || (b.bitrate - a.bitrate)),
-        audios: rawAuds.slice().sort((a, b) => (b.audioChannels - a.audioChannels) || (b.bitrate - a.bitrate)),
+        title: (obj.videoDetails && obj.videoDetails.title) || (existing && existing.title) || '',
+        // Preserve catalog so format lists never shrink when streams are pinned
+        videos: (existing && existing.videos && existing.videos.length > newVids.length) ? existing.videos : newVids,
+        audios: (existing && existing.audios && existing.audios.length > newAuds.length) ? existing.audios : newAuds,
         updatedAt: Date.now()
       };
     }
@@ -308,11 +312,14 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         auds = match;
       }
     } else {
-      // By default prioritize 5.1 multi-channel surround streams (ec-3, ac-3, iamf)
-      const multi = rawAuds.filter(a => (a.audioChannels || 2) >= 6);
-      if (multi.length) {
-        auds = multi.concat(rawAuds.filter(a => (a.audioChannels || 2) < 6));
-      }
+      // By default prioritize Dolby Digital Plus (ec-3 5.1), then Dolby Digital (ac-3 5.1),
+      // then Opus Immersive (iamf 5.1), then other multi-channel, then stereo!
+      const ddp = rawAuds.filter(a => (a.mimeType || '').toLowerCase().includes('ec-3'));
+      const dd = rawAuds.filter(a => (a.mimeType || '').toLowerCase().includes('ac-3'));
+      const iamf = rawAuds.filter(a => (a.mimeType || '').toLowerCase().includes('iamf'));
+      const otherMulti = rawAuds.filter(a => (a.audioChannels || 2) >= 6 && !ddp.includes(a) && !dd.includes(a) && !iamf.includes(a));
+      const stereo = rawAuds.filter(a => (a.audioChannels || 2) < 6);
+      auds = ddp.concat(dd, iamf, otherMulti, stereo);
     }
 
     sd.adaptiveFormats = vids.concat(auds);
@@ -366,8 +373,24 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     } catch (e) {}
     const p = document.getElementById('ytlr-player__player-container-player');
     try {
+      if (p && typeof p.loadVideoById === 'function') {
+        p.loadVideoById({ videoId: vid, startSeconds: t });
+        setTimeout(() => {
+          try {
+            if (p && typeof p.playVideo === 'function') p.playVideo();
+          } catch (e) {}
+        }, 150);
+        return;
+      }
+    } catch (e) {}
+    try {
       if (p && typeof p.loadVideoByPlayerVars === 'function') {
         p.loadVideoByPlayerVars({ videoId: vid, startSeconds: t });
+        setTimeout(() => {
+          try {
+            if (p && typeof p.playVideo === 'function') p.playVideo();
+          } catch (e) {}
+        }, 150);
         return;
       }
     } catch (e) {}
@@ -385,7 +408,12 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         const t = parseFloat(saved);
         const v = document.querySelector('video');
         if (v && !isNaN(t) && t > 1) {
-          const seek = () => { try { v.currentTime = t; } catch (e) {} };
+          const seek = () => {
+            try {
+              v.currentTime = t;
+              v.play();
+            } catch (e) {}
+          };
           if (v.readyState >= 1) seek();
           else v.addEventListener('loadedmetadata', seek, { once: true });
         }
@@ -393,6 +421,59 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     } catch (e) {}
   }
   setInterval(checkResume, 1000);
+
+  // Helper to determine currently active audio itag for accurate checkmark reporting
+  function getCurrentlyPlayingAudioItag(vid) {
+    const pin = getPin(vid);
+    if (pin && pin.audioItag) return Number(pin.audioItag);
+    try {
+      const p = document.getElementById('ytlr-player__player-container-player');
+      if (p && p.getStatsForNerds) {
+        const s = p.getStatsForNerds();
+        if (s && s.codecs) {
+          const m = s.codecs.match(/\/\s*[a-zA-Z0-9.-]+\s*\((\d+)\)/);
+          if (m) return Number(m[1]);
+        }
+      }
+    } catch (e) {}
+    const cat = (vid && catalog[vid]) || null;
+    if (cat && cat.audios && cat.audios.length) {
+      const ddp = cat.audios.find(a => Number(a.itag) === 328);
+      if (ddp) return 328;
+      return Number(cat.audios[0].itag);
+    }
+    return null;
+  }
+
+  // Create robust AudioTrack object fully conforming to YouTube TV player & Kabuki UI interfaces
+  function createAudioTrackObj(a, curItag) {
+    const id = String(a.itag);
+    const name = a.displayName;
+    const isDef = (Number(a.itag) === Number(curItag));
+    const langInfo = {
+      id: id,
+      name: name,
+      isDefault: isDef,
+      isAutoDubbed: false,
+      getName: function () { return name; },
+      getId: function () { return id; },
+      getIsDefault: function () { return isDef; },
+      getIsAutoDubbed: function () { return false; },
+      toString: function () { return name; }
+    };
+    return {
+      id: id,
+      xb: langInfo,
+      getLanguageInfo: function () { return langInfo; },
+      getName: function () { return name; },
+      getId: function () { return id; },
+      getIsDefault: function () { return isDef; },
+      isAutoDubbed: function () { return false; },
+      captionTracks: [],
+      captionsInitialState: 'CAPTIONS_INITIAL_STATE_UNKNOWN',
+      toString: function () { return name; }
+    };
+  }
 
   // 9. Hook native YouTube TV Player API methods for seamless UI integration!
   function hookPlayerApi() {
@@ -469,19 +550,17 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       const vid = getCurrentVideoId();
       const cat = (vid && catalog[vid]) || null;
       if (cat && cat.audios && cat.audios.length) {
-        const pin = getPin(vid);
-        const curItag = pin.audioItag ? Number(pin.audioItag) : Number(cat.audios[0].itag);
-        return cat.audios.map(a => ({
-          id: String(a.itag),
-          xb: {
-            id: String(a.itag),
-            name: a.displayName,
-            isDefault: (Number(a.itag) === curItag),
-            isAutoDubbed: false
-          },
-          captionTracks: [],
-          captionsInitialState: 'CAPTIONS_INITIAL_STATE_UNKNOWN'
-        }));
+        const curItag = getCurrentlyPlayingAudioItag(vid);
+        // Deduplicate tracks by displayName so duplicate DRC bitrates are not repeated
+        const seen = new Set();
+        const uniqueAuds = [];
+        for (const a of cat.audios) {
+          if (!seen.has(a.displayName)) {
+            seen.add(a.displayName);
+            uniqueAuds.push(a);
+          }
+        }
+        return uniqueAuds.map(a => createAudioTrackObj(a, curItag));
       }
       return [];
     };
@@ -490,34 +569,35 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       const vid = getCurrentVideoId();
       const cat = (vid && catalog[vid]) || null;
       if (cat && cat.audios && cat.audios.length) {
-        const pin = getPin(vid);
-        const curItag = pin.audioItag ? Number(pin.audioItag) : Number(cat.audios[0].itag);
+        const curItag = getCurrentlyPlayingAudioItag(vid);
         const active = cat.audios.find(a => Number(a.itag) === curItag) || cat.audios[0];
-        return {
-          id: String(active.itag),
-          xb: {
-            id: String(active.itag),
-            name: active.displayName,
-            isDefault: true,
-            isAutoDubbed: false
-          },
-          captionTracks: [],
-          captionsInitialState: 'CAPTIONS_INITIAL_STATE_UNKNOWN'
-        };
+        return createAudioTrackObj(active, curItag);
       }
-      return { id: 'und', xb: { id: 'und', name: 'Default', isDefault: true, isAutoDubbed: false }, captionTracks: [] };
+      const defLang = { id: 'und', name: 'Default', isDefault: true, getName: () => 'Default', getId: () => 'und' };
+      return { id: 'und', xb: defLang, getLanguageInfo: () => defLang, captionTracks: [] };
     };
 
     // When the user clicks an audio track in the native "Faixa de áudio" menu:
     p.setAudioTrack = function (track) {
-      if (track) {
-        const tid = String(track.id || (track.xb && track.xb.id) || '');
-        const numItag = parseInt(tid, 10);
-        if (numItag) {
-          const vid = getCurrentVideoId();
-          setPin(vid, { audioItag: numItag });
-          reloadPlayerAtCurrentTime(vid);
-        }
+      if (!track) return;
+      const tid = String(track.id || (track.xb && (track.xb.id || (typeof track.xb.getId === 'function' && track.xb.getId()))) || '');
+      let numItag = parseInt(tid, 10);
+      const vid = getCurrentVideoId();
+      const cat = (vid && catalog[vid]) || null;
+      if (!numItag && cat && cat.audios) {
+        const trackName = (typeof track.getName === 'function' ? track.getName() : '') ||
+                          (typeof track.getLanguageInfo === 'function' && track.getLanguageInfo() && track.getLanguageInfo().getName()) ||
+                          (track.xb && typeof track.xb.getName === 'function' ? track.xb.getName() : '') ||
+                          (track.xb && track.xb.name) || '';
+        const match = cat.audios.find(a => a.displayName === trackName);
+        if (match) numItag = Number(match.itag);
+      }
+      if (numItag && vid) {
+        setPin(vid, { audioItag: numItag });
+        reloadPlayerAtCurrentTime(vid);
+        try {
+          p.dispatchEvent(new CustomEvent('onPlaybackAudioChange'));
+        } catch (e) {}
       }
     };
 
