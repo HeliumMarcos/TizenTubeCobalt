@@ -439,15 +439,18 @@ bool ParseVp09Info(const char* codec,
   // expected sizes are known.
   const char kShortFormReference[] = "vp09.00.41.08";
   const char kMediumFormReference[] = "vp09.02.10.10.01.09.16.09";
+  const char kLongForm1DigitReference[] = "vp09.02.10.10.01.09.16.09.0";
   const char kLongFormReference[] = "vp09.02.10.10.01.09.16.09.01";
   const size_t kShortFormSize = strlen(kShortFormReference);
   const size_t kMediumFormSize = strlen(kMediumFormReference);
+  const size_t kLongForm1DigitSize = strlen(kLongForm1DigitReference);
 
   // 1. Sanity check the format.
   if (strncmp(codec, "vp09.", 5) != 0) {
     return false;
   }
   if (!VerifyFormatStrictly(codec, kLongFormReference) &&
+      !VerifyFormatStrictly(codec, kLongForm1DigitReference) &&
       !VerifyFormatStrictly(codec, kMediumFormReference) &&
       !VerifyFormatStrictly(codec, kShortFormReference)) {
     return false;
@@ -528,8 +531,14 @@ bool ParseVp09Info(const char* codec,
     return true;
   }
 
-  // 11. Parse color range, which can only be 0 or 1.
+  // 11. Parse color range, which can be 1 digit ("0"/"1") or 2 digits ("00"/"01").
   int color_range;
+  if (strlen(codec) == kLongForm1DigitSize) {
+    if (codec[26] != '0' && codec[26] != '1') {
+      return false;
+    }
+    return true;
+  }
   if (!ReadTwoDigitDecimal(codec + 26, &color_range)) {
     return false;
   }

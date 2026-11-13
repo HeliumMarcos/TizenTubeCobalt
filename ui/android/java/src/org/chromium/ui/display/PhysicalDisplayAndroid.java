@@ -62,8 +62,8 @@ import java.util.function.Consumer;
     }
 
     private static boolean isHdr(Display display) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return false;
-        return display.isHdr() && display.isHdrSdrRatioAvailable();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false;
+        return display.isHdr();
     }
 
     @EnsuresNonNull("sForcedDIPScale")

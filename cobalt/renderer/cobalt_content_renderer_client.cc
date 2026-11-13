@@ -26,6 +26,7 @@
 #include "build/build_config.h"
 #include "cobalt/media/service/mojom/platform_window_provider.mojom.h"
 #include "cobalt/renderer/cobalt_render_frame_observer.h"
+#include "cobalt/renderer/l1_media_ui_script.h"
 #include "cobalt/shell/common/url_constants.h"
 #include "components/cdm/renderer/widevine_key_system_info.h"
 #include "components/js_injection/renderer/js_communication.h"
@@ -47,6 +48,9 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_runtime_features.h"
 #include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_script_source.h"
 #include "third_party/blink/public/web/web_security_policy.h"
 #include "third_party/blink/public/web/web_view.h"
 #include "third_party/blink/public/web/web_view_observer.h"
@@ -89,14 +93,37 @@ ExperimentalFeatures ParseH5vccSettings(mojom::SettingsPtr settings) {
 // example, vp9 profile 2 indicates hdr support, so an implementation accepts
 // "codecs=vp9" may reject "codecs=vp9.2".
 std::string GetMimeFromVideoType(const ::media::VideoType& type) {
-  // The MIME string is for very basic video codec supportability check.
+  const bool is_hlg = type.color_space.transfer ==
+                      ::media::VideoColorSpace::TransferID::ARIB_STD_B67;
+  const bool is_hdr =
+      is_hlg ||
+      type.color_space.transfer ==
+          ::media::VideoColorSpace::TransferID::SMPTEST2084;
+  const bool is_10bit = type.bit_depth.value_or(8) > 8 || is_hdr;
+
   switch (type.codec) {
     case ::media::VideoCodec::kH264:
       return "video/mp4; codecs=\"avc1.4d4015\"";
     case ::media::VideoCodec::kVP9:
+      if (is_10bit || type.profile == ::media::VP9PROFILE_PROFILE2 ||
+          type.profile == ::media::VP9PROFILE_PROFILE3) {
+        return is_hlg
+                   ? "video/webm; codecs=\"vp09.02.10.10.01.09.18.09.00\""
+                   : "video/webm; codecs=\"vp09.02.10.10.01.09.16.09.00\"";
+      }
       return "video/webm; codecs=\"vp9\"";
     case ::media::VideoCodec::kAV1:
-      return "video/mp4; codecs=\"av01.0.08M.08\"";
+      if (is_10bit) {
+        return is_hlg
+                   ? "video/mp4; codecs=\"av01.0.13M.10.0.110.09.18.09.0\""
+                   : "video/mp4; codecs=\"av01.0.13M.10.0.110.09.16.09.0\"";
+      }
+      return "video/mp4; codecs=\"av01.0.13M.08\"";
+    case ::media::VideoCodec::kHEVC:
+      if (is_10bit || type.profile == ::media::HEVCPROFILE_MAIN10) {
+        return "video/mp4; codecs=\"hev1.2.4.L153.B0\"";
+      }
+      return "video/mp4; codecs=\"hev1.1.6.L153.B0\"";
     default:
       return "";
   }
@@ -396,6 +423,25 @@ void CobaltContentRendererClient::RunScriptsAtDocumentStart(
   js_injection::JsCommunication* communication =
       js_injection::JsCommunication::Get(render_frame);
   communication->RunScriptsAtDocumentStart();
+  if (render_frame && render_frame->IsMainFrame()) {
+    blink::WebLocalFrame* web_frame = render_frame->GetWebFrame();
+    if (web_frame) {
+      std::string url = web_frame->GetDocument().Url().GetString().Utf8();
+      if (url.rfind("https://", 0) == 0 || url.rfind("http://", 0) == 0) {
+        size_t host_start = url.find("://") + 3;
+        size_t host_end = url.find_first_of("/:?#", host_start);
+        std::string host = url.substr(
+            host_start, host_end == std::string::npos ? std::string::npos
+                                                      : host_end - host_start);
+        if (host == "youtube.com" ||
+            (host.size() > 12 &&
+             host.compare(host.size() - 12, 12, ".youtube.com") == 0)) {
+          web_frame->ExecuteScript(blink::WebScriptSource(
+              blink::WebString::FromUTF8(kL1MediaUiScript)));
+        }
+      }
+    }
+  }
 }
 
 void CobaltContentRendererClient::GetStarboardRendererFactoryTraits(

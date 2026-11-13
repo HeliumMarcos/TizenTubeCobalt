@@ -20,6 +20,7 @@ source_set("renderer") {
     "cobalt_content_renderer_client.h",
     "cobalt_render_frame_observer.cc",
     "cobalt_render_frame_observer.h",
+    "l1_media_ui_script.h",
   ]
 
   deps = [

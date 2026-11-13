@@ -148,6 +148,12 @@ bool WebrtcEncodeForceSmoothIfPowerEfficient() {
 bool UseGpuFactoriesForPowerEfficient(
     ExecutionContext* execution_context,
     const MediaKeySystemAccess* key_system_access) {
+#if BUILDFLAG(IS_COBALT)
+  // Cobalt runs with --disable-accelerated-video-decode because media decoding
+  // is routed through Starboard; querying Chromium GpuVideoAcceleratorFactories
+  // would always return powerEfficient=false and mark VP9 as unsupported.
+  return false;
+#else
   // TODO(1105258): GpuFactories isn't available in worker scope yet.
   if (!execution_context || execution_context->IsWorkerGlobalScope())
     return false;
@@ -160,6 +166,7 @@ bool UseGpuFactoriesForPowerEfficient(
 
   return base::FeatureList::IsEnabled(
       media::kMediaCapabilitiesQueryGpuFactories);
+#endif
 }
 
 // Utility function that will create a MediaCapabilitiesDecodingInfo object with
