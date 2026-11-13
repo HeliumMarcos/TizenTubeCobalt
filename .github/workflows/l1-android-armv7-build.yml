@@ -12,6 +12,7 @@ on:
       - 'app/.gn'
       - 'app/DEPS'
       - 'app/.gitmodules'
+      - '.gitmodules'
       - 'app/cobalt/**'
       - 'app/starboard/**'
       - 'app/third_party/blink/renderer/core/dom/document.cc'
@@ -27,6 +28,7 @@ on:
       - 'app/.gn'
       - 'app/DEPS'
       - 'app/.gitmodules'
+      - '.gitmodules'
       - 'app/cobalt/**'
       - 'app/starboard/**'
 
@@ -48,6 +50,7 @@ jobs:
         with:
           persist-credentials: false
           sparse-checkout: |
+            .gitmodules
             app/.gn
             app/DEPS
             app/.gitmodules
@@ -88,11 +91,12 @@ jobs:
           migrated = Path('app/DEPS').is_file()
           root = Path('app') if migrated else Path('.')
           if migrated:
+              assert Path('.gitmodules').is_file()
               assert (root / '.gn').is_file()
               assert (root / '.gitmodules').is_file()
               assert (root / 'cobalt').is_dir()
               import subprocess
-              expected = {'.gitattributes', '.github', '.gitignore',
+              expected = {'.gitmodules', '.github', '.gitignore',
                           'AGENTS.md', 'README.md', 'app', 'docs'}
               actual = set(subprocess.check_output(
                   ['git', 'ls-tree', '--name-only', 'HEAD'], text=True).splitlines())
