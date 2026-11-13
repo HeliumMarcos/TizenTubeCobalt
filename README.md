@@ -78,14 +78,15 @@ A matriz de testes, os arquivos afetados e os critérios de aceitação estão n
 
 ## Desenvolvimento
 
-**Estrutura em teste na branch `refactor/seven-entry-root`:** o código Chromium/Cobalt foi movido para `app/`, deixando apenas sete entradas na raiz. **A compilação ainda não foi validada com essa estrutura; o `main` permanece inalterado.** Consulte os [riscos e verificações pendentes](docs/TUBERUSH_ORGANIZACAO_RAIZ.md).
+**Estrutura em teste na branch `refactor/seven-entry-root`:** o código Chromium/Cobalt foi movido para `app/`, deixando apenas sete entradas na raiz. **O checkout e a montagem temporária da árvore Cobalt foram validados no Actions; a compilação completa ainda não foi confirmada. O `main` permanece inalterado.** Consulte os [riscos e verificações pendentes](docs/TUBERUSH_ORGANIZACAO_RAIZ.md).
 
 - **Código e integração nesta branch:** `app/cobalt/`, `app/starboard/`, `app/third_party/`, `app/.gn` e `app/DEPS`.
 - **Compilação Android:** `.github/workflows/l1-android-armv7-build.yml`.
 - **Plano de execução:** `docs/TUBERUSH_PLANO_MESTRE.md`.
 - **Instruções para agentes e contribuidores:** `AGENTS.md`.
-- **Migração de estrutura:** [workflow no GitHub Actions](https://github.com/HeliumMarcos/TubeRush/actions/runs/43372028178); esta validação não substitui uma compilação Android.
+- **Migração de estrutura:** [teste de checkout aprovado](https://github.com/HeliumMarcos/TubeRush/actions/runs/43374563065); ainda não substitui uma compilação Android.
+- **Submódulos:** `.gitmodules` na raiz aponta para `app/` e `docs/website`; `app/.gitmodules` preserva os caminhos originais do Cobalt.
 
 ## Créditos e licenças
 
-**TubeRush** é uma personalização independente desenvolvida a partir de projetos de código aberto. Os créditos de [reisxd/TizenTubeCobalt](https://github.com/reisxd/TizenTubeCobalt), [TizenTube](https://github.com/reisxd/TizenTube), [YouTube Cobalt](https://github.com/youtube/cobalt), Chromium e demais componentes continuam pertencendo aos respectivos autores. Consulte os arquivos de licenças e avisos incluídos no código, como [LICENSE](LICENSE), [AUTHORS](AUTHORS) e os avisos específicos das dependências. O TubeRush não é um aplicativo oficial do YouTube ou do Google.
+**TubeRush** é uma personalização independente desenvolvida a partir de projetos de código aberto. Os créditos de [reisxd/TizenTubeCobalt](https://github.com/reisxd/TizenTubeCobalt), [TizenTube](https://github.com/reisxd/TizenTube), [YouTube Cobalt](https://github.com/youtube/cobalt), Chromium e demais componentes continuam pertencendo aos respectivos autores. Consulte os arquivos de licenças e avisos incluídos no código, como [LICENSE](app/LICENSE), [AUTHORS](app/AUTHORS) e os avisos específicos das dependências. O TubeRush não é um aplicativo oficial do YouTube ou do Google.
