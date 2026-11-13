@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="t d">
+<title id="t">TubeRush — YouTube na sua Google TV</title>
+<desc id="d">Banner azul-marinho do TubeRush, com informações sobre formatos de vídeo 4K HDR, codecs AV1 e VP9 e som surround 5.1.</desc>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b1326"/><stop offset=".57" stop-color="#102644"/><stop offset="1" stop-color="#064b6c"/></linearGradient>
+<linearGradient id="cy" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#61d2ff"/><stop offset="1" stop-color="#93efff"/></linearGradient>
+<linearGradient id="red" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ff6570"/><stop offset="1" stop-color="#e9324c"/></linearGradient>
+<filter id="shadow" x="-20%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="13" stdDeviation="16" flood-color="#000" flood-opacity=".23"/></filter>
+</defs>
+<rect width="1200" height="360" rx="18" fill="url(#bg)"/>
+<path d="M0 296 C200 244 347 389 590 285S1005 294 1200 203 L1200 360 L0 360Z" fill="#4ec7ef" opacity=".055"/>
+<circle cx="1104" cy="38" r="155" fill="#44c4ec" opacity=".065"/>
+<circle cx="1048" cy="294" r="172" fill="#2db4e2" opacity=".05"/>
+<g transform="translate(72 53)">
+<rect width="49" height="38" rx="12" fill="url(#red)"/>
+<path d="M19 10 L19 28 L35 19Z" fill="#fff"/>
+<path d="M3 42 H47" stroke="#5ac8fc" stroke-width="2.5" stroke-linecap="round"/>
+<text x="66" y="29" font-family="Segoe UI,Arial,sans-serif" font-size="22" font-weight="700" letter-spacing=".1" fill="#f8fbff">TubeRush</text>
+</g>
+<g font-family="Segoe UI,Arial,sans-serif">
+<text x="73" y="170" fill="#f7fbff" font-weight="750" font-size="54">Sua experiência</text>
+<text x="73" y="229" fill="url(#cy)" font-weight="750" font-size="54">na Google TV.</text>
+<text x="76" y="271" fill="#bdd4ea" font-size="20">Qualidade, codecs e áudio sob seu controle.</text>
+<g transform="translate(75 293)" font-size="12.5" font-weight="650">
+<rect width="109" height="26" rx="7" fill="#182f49" stroke="#345f7d"/>
+<text x="54" y="18" text-anchor="middle" fill="#d6edf9">Android TV</text>
+<rect x="119" width="95" height="26" rx="7" fill="#182f49" stroke="#345f7d"/>
+<text x="167" y="18" text-anchor="middle" fill="#d6edf9">Cobalt</text>
+<rect x="224" width="118" height="26" rx="7" fill="#182f49" stroke="#345f7d"/>
+<text x="283" y="18" text-anchor="middle" fill="#d6edf9">Código aberto</text>
+</g>
+</g>
+<g transform="translate(717 52)" filter="url(#shadow)" font-family="Segoe UI,Arial,sans-serif">
+<rect width="410" height="264" rx="17" fill="#10233a" stroke="#335574"/>
+<rect x="1" y="1" width="408" height="54" rx="16" fill="#192e47"/>
+<rect x="1" y="38" width="408" height="17" fill="#192e47"/>
+<circle cx="25" cy="27" r="4" fill="#73d9ff"/>
+<text x="40" y="32" fill="#e6f6ff" font-weight="700" font-size="16">Formatos de reprodução</text>
+<text x="23" y="84" fill="#91b1ce" font-size="11.5" letter-spacing=".6">QUALIDADE DE VÍDEO</text>
+<rect x="19" y="99" width="372" height="54" rx="9" fill="#1a3c5a" stroke="#3a8fb8"/>
+<text x="35" y="123" fill="#fff" font-size="17" font-weight="700">2160p</text>
+<text x="107" y="123" fill="#cbecff" font-size="14">· 60 FPS · AV1 · HDR10</text>
+<text x="36" y="141" fill="#7ddaff" font-size="11">Perfis e compatibilidade em evolução</text>
+<rect x="19" y="161" width="372" height="37" rx="9" fill="#142a42" stroke="#294867"/>
+<text x="35" y="185" fill="#d8edfd" font-size="14">VP9 / AVC</text>
+<text x="296" y="185" fill="#87b4d2" font-size="12">Codecs</text>
+<rect x="19" y="206" width="372" height="37" rx="9" fill="#142a42" stroke="#294867"/>
+<text x="35" y="230" fill="#d8edfd" font-size="14">Dolby Digital Plus · 5.1</text>
+<circle cx="372" cy="224" r="5" fill="#55d7a7"/>
+</g>
+</svg>
