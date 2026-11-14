@@ -20,9 +20,10 @@ namespace cobalt {
 // Injected via WebLocalFrame::ExecuteScript at document start so YouTube TV CSP
 // cannot block it. Unlocks 4K/HDR & 5.1/Stereo audio, formats each video stream
 // in the native YouTube TV "Qualidade" menu with resolution, FPS, bitrate and codec
-// (SmartTube style: "2160p, 30fps, 24.33Mbps, vp9 HDR", "2160p, 30fps, 82.49Mbps, av1 HDR"),
-// and lists all available audio streams (Dolby Digital Plus ec-3 5.1, Dolby Digital ac-3 5.1,
-// Opus Immersive iamf 5.1, Stereo) directly in the native YouTube TV "Faixa de áudio" menu!
+// (SmartTube style: "2160p, 60fps, 82.49Mbps, av1 HDR", "2160p, 60fps, 44.16Mbps, vp9"),
+// preserves full video/audio catalogs across codec/resolution preferences, and lists
+// all available audio streams (Dolby Digital Plus ec-3 5.1, Dolby Digital ac-3 5.1,
+// multi-language tracks, DRC variants, Stereo) in the native "Faixa de áudio" menu.
 inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
 (function () {
   if (window.__ttL1Init) return;
@@ -30,6 +31,8 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
 
   const SESSION_PIN_PREFIX = 'ttL1Pin_';
   const SESSION_RESUME_PREFIX = 'ttL1Resume_';
+  const YTAF_CONFIG_KEY = 'ytaf-configuration';
+  const TUBERUSH_RELEASES_API = 'https://api.github.com/repos/HeliumMarcos/TubeRush/releases/latest';
 
   // 1. Force 4K viewport so YouTube TV serves 4K 2160p assets and formats.
   try {
@@ -39,29 +42,6 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         get: () => Math.max(2, nativeDpr),
         configurable: true
       });
-    }
-  } catch (e) {}
-
-  // 2. Unlock HDR media query reporting.
-  try {
-    if (window.matchMedia) {
-      const origMatchMedia = window.matchMedia.bind(window);
-      window.matchMedia = function (query) {
-        const res = origMatchMedia(query);
-        if (query && /dynamic-range\s*:\s*high/i.test(query) && !res.matches) {
-          return {
-            matches: true,
-            media: query,
-            onchange: null,
-            addListener: function () {},
-            removeListener: function () {},
-            addEventListener: function () {},
-            removeEventListener: function () {},
-            dispatchEvent: function () { return false; }
-          };
-        }
-        return res;
-      };
     }
   } catch (e) {}
 
@@ -80,16 +60,59 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     return false;
   }
 
-  // 3. MediaSource.isTypeSupported
+  let origIsTypeSupported = null;
   try {
-    if (window.MediaSource && window.MediaSource.isTypeSupported) {
-      const origIsType = window.MediaSource.isTypeSupported.bind(window.MediaSource);
+    if (window.MediaSource && typeof window.MediaSource.isTypeSupported === 'function') {
+      origIsTypeSupported = window.MediaSource.isTypeSupported.bind(window.MediaSource);
+    }
+  } catch (e) {}
+
+  function checkNativeIamfSupport() {
+    try {
+      if (origIsTypeSupported) {
+        return !!origIsTypeSupported('audio/mp4; codecs="iamf.001.001.opus"');
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // 2. Unlock HDR media query reporting when HDR codecs are supported.
+  try {
+    if (window.matchMedia) {
+      const origMatchMedia = window.matchMedia.bind(window);
+      window.matchMedia = function (query) {
+        const res = origMatchMedia(query);
+        if (query && /dynamic-range\s*:\s*high/i.test(query) && !res.matches) {
+          if (window.__ttL1HdrSupported !== false) {
+            return {
+              matches: true,
+              media: query,
+              onchange: null,
+              addListener: function () {},
+              removeListener: function () {},
+              addEventListener: function () {},
+              removeEventListener: function () {},
+              dispatchEvent: function () { return false; }
+            };
+          }
+        }
+        return res;
+      };
+    }
+  } catch (e) {}
+
+  // 3. MediaSource.isTypeSupported (reflect real device capabilities; never fake IAMF)
+  try {
+    if (window.MediaSource && origIsTypeSupported) {
       window.MediaSource.isTypeSupported = function (typeStr) {
         if (!typeStr) return false;
         if (isNegativeProbe(typeStr)) return false;
         const lower = String(typeStr).toLowerCase();
         if (lower.includes('audio/')) {
-          if (lower.includes('ec-3') || lower.includes('ac-3') || lower.includes('iamf') || lower.includes('opus') || lower.includes('mp4a')) {
+          if (lower.includes('iamf')) {
+            return checkNativeIamfSupport();
+          }
+          if (lower.includes('ec-3') || lower.includes('ac-3') || lower.includes('opus') || lower.includes('mp4a')) {
             return true;
           }
         }
@@ -98,7 +121,7 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
             return true;
           }
         }
-        return origIsType(typeStr);
+        return origIsTypeSupported(typeStr);
       };
     }
   } catch (e) {}
@@ -112,7 +135,10 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         if (isNegativeProbe(typeStr)) return '';
         const lower = String(typeStr).toLowerCase();
         if (lower.includes('audio/')) {
-          if (lower.includes('ec-3') || lower.includes('ac-3') || lower.includes('iamf') || lower.includes('opus') || lower.includes('mp4a')) {
+          if (lower.includes('iamf')) {
+            return checkNativeIamfSupport() ? 'probably' : '';
+          }
+          if (lower.includes('ec-3') || lower.includes('ac-3') || lower.includes('opus') || lower.includes('mp4a')) {
             return 'probably';
           }
         }
@@ -137,16 +163,35 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
             if (ch > 6 || ch === 99) {
               return { supported: false, smooth: false, powerEfficient: false };
             }
+            if (config.audio.contentType && isNegativeProbe(config.audio.contentType)) {
+              return { supported: false, smooth: false, powerEfficient: false };
+            }
           }
-          if (config && config.video && config.video.contentType) {
-            const vl = String(config.video.contentType).toLowerCase();
-            if (vl.includes('vp09') || vl.includes('vp9') || vl.includes('av01') || vl.includes('avc1')) {
-              return { supported: true, smooth: true, powerEfficient: true };
+          if (config && config.video) {
+            const w = Number(config.video.width || 0);
+            const h = Number(config.video.height || 0);
+            const br = Number(config.video.bitrate || 0);
+            const fps = Number(config.video.framerate || 0);
+            if (w > 8192 || h > 4320 || br >= 1000000000 || fps >= 1000) {
+              return { supported: false, smooth: false, powerEfficient: false };
+            }
+            if (config.video.contentType && isNegativeProbe(config.video.contentType)) {
+              return { supported: false, smooth: false, powerEfficient: false };
+            }
+            if (config.video.contentType) {
+              const vl = String(config.video.contentType).toLowerCase();
+              if (vl.includes('vp09') || vl.includes('vp9') || vl.includes('av01') || vl.includes('avc1')) {
+                return { supported: true, smooth: true, powerEfficient: true };
+              }
             }
           }
           if (config && config.audio && config.audio.contentType) {
             const al = String(config.audio.contentType).toLowerCase();
-            if (al.includes('ec-3') || al.includes('ac-3') || al.includes('iamf') || al.includes('opus') || al.includes('mp4a')) {
+            if (al.includes('iamf')) {
+              const iamfOk = checkNativeIamfSupport();
+              return { supported: iamfOk, smooth: iamfOk, powerEfficient: iamfOk };
+            }
+            if (al.includes('ec-3') || al.includes('ac-3') || al.includes('opus') || al.includes('mp4a')) {
               return { supported: true, smooth: true, powerEfficient: true };
             }
           }
@@ -166,7 +211,7 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     }
   } catch (e) {}
 
-  // 7. Inject 5.1 Surround Sound experiment flags into YouTube TV config
+  // 7. Inject 5.1 Surround Sound & HBR format-id experiment flags into YouTube TV config
   function applyExperimentFlags() {
     try {
       if (window.ytcfg && window.ytcfg.get) {
@@ -177,180 +222,684 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
           html5_honor_user_51_preference: true,
           html5_enable_eac3: true,
           html5_enable_ac3: true,
-          html5_enable_iamf_audio: true,
+          html5_enable_iamf_audio: checkNativeIamfSupport(),
           html5_ugc_vod_audio_51: true,
           html5_onesie_51_audio: true,
           html5_kabuki_drm_live_51_default_off: false,
-          html5_ytv_surround_toggle_default_off: false
+          html5_ytv_surround_toggle_default_off: false,
+          web_player_enable_premium_hbr_in_h5_api: true
         });
-        window.ytcfg.set({ EXPERIMENT_FLAGS: exp });
+        if (typeof window.ytcfg.set === 'function') {
+          window.ytcfg.set({ EXPERIMENT_FLAGS: exp });
+        }
       }
     } catch (e) {}
   }
   applyExperimentFlags();
   setInterval(applyExperimentFlags, 2000);
 
-  // 8. Stream catalog & format pinning
+  // 8. User Preferences helper (reads TizenTube / TubeRush localStorage settings)
+  function getUserPreferences() {
+    let preferredVideoQuality = 'auto';
+    let preferredVideoCodec = 'any';
+    try {
+      const raw = window.localStorage && window.localStorage.getItem(YTAF_CONFIG_KEY);
+      if (raw) {
+        const parsed = nativeJsonParse(raw);
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.preferredVideoQuality) {
+            preferredVideoQuality = String(parsed.preferredVideoQuality).toLowerCase();
+          }
+          const codecPref = parsed.preferredVideoCodec || parsed.videoPreferredCodec;
+          if (codecPref) {
+            preferredVideoCodec = String(codecPref).toLowerCase();
+          }
+        }
+      }
+    } catch (e) {}
+    return { preferredVideoQuality, preferredVideoCodec };
+  }
+
+  // 9. Stream catalog, HLS parser & format pinning
   const catalog = (window.__ttL1Catalog = window.__ttL1Catalog || {});
   const pinnedMap = (window.__ttL1Pinned = window.__ttL1Pinned || {});
 
   function getPin(vid) {
-    if (!vid) return { videoItag: null, audioItag: null };
+    if (!vid) return { videoItag: null, manualVideo: false, audioItag: null, audioKey: null };
     if (pinnedMap[vid]) return pinnedMap[vid];
     try {
       const raw = sessionStorage.getItem(SESSION_PIN_PREFIX + vid);
       if (raw) {
-        pinnedMap[vid] = JSON.parse(raw);
+        pinnedMap[vid] = nativeJsonParse(raw);
         return pinnedMap[vid];
       }
     } catch (e) {}
-    return { videoItag: null, audioItag: null };
+    return { videoItag: null, manualVideo: false, audioItag: null, audioKey: null };
   }
 
   function setPin(vid, patch) {
     if (!vid) return;
-    const cur = Object.assign({ videoItag: null, audioItag: null }, getPin(vid), patch);
+    const cur = Object.assign(
+      { videoItag: null, manualVideo: false, audioItag: null, audioKey: null },
+      getPin(vid),
+      patch
+    );
     pinnedMap[vid] = cur;
     try {
       sessionStorage.setItem(SESSION_PIN_PREFIX + vid, JSON.stringify(cur));
     } catch (e) {}
   }
 
+  function heightToQualityKey(height) {
+    const h = Number(height || 0);
+    if (h >= 4320) return 'highres';
+    if (h >= 2880) return 'hd2880';
+    if (h >= 2160) return 'hd2160';
+    if (h >= 1440) return 'hd1440';
+    if (h >= 1080) return 'hd1080';
+    if (h >= 720) return 'hd720';
+    if (h >= 480) return 'large';
+    if (h >= 360) return 'medium';
+    if (h >= 240) return 'small';
+    return 'tiny';
+  }
+
+  function qualityKeyToHeight(qKey) {
+    const map = {
+      highres: 4320,
+      hd2880: 2880,
+      hd2160: 2160,
+      hd1440: 1440,
+      hd1080: 1080,
+      hd720: 720,
+      large: 480,
+      medium: 360,
+      small: 240,
+      tiny: 144,
+      light: 144
+    };
+    const k = String(qKey || '').toLowerCase();
+    if (map[k]) return map[k];
+    const m = k.match(/(\d{3,4})/);
+    return m ? Number(m[1]) : 0;
+  }
+
   function isHdrFormat(f) {
+    if (!f) return false;
+    if (typeof f.__isHdr === 'boolean') return f.__isHdr;
     const tc = (f.colorInfo && f.colorInfo.transferCharacteristics) || '';
     const m = (f.mimeType || '').toLowerCase();
-    const ql = (f.qualityLabel || '').toUpperCase();
+    const ql = (f.__origQualityLabel || f.qualityLabel || '').toUpperCase();
     if (tc.includes('SMPTEST2084') || tc.includes('ARIB_STD_B67')) return true;
     if (/\.(16|18)\.\d{2}\.\d/.test(m) || ql.includes('HDR') || ql.includes('HLG')) return true;
     return false;
   }
 
+  function detectVideoCodecFamily(mime) {
+    const m = (mime || '').toLowerCase();
+    if (m.includes('av01') || m.includes('av1')) return 'av01';
+    if (m.includes('vp9') || m.includes('vp09')) return 'vp9';
+    if (m.includes('avc1') || m.includes('h264')) return 'avc1';
+    return 'other';
+  }
+
   function detectVideoCodecLabel(mime, isHdr) {
     const m = (mime || '').toLowerCase();
     if (m.includes('av01') || m.includes('av1')) return isHdr ? 'av1 HDR' : 'av1';
-    if (m.includes('vp9.2') || (m.includes('vp9') && isHdr)) return 'vp9 HDR';
+    if (m.includes('vp9.2') || ((m.includes('vp9') || m.includes('vp09')) && isHdr)) return 'vp9 HDR';
     if (m.includes('vp9') || m.includes('vp09')) return 'vp9';
     if (m.includes('avc1') || m.includes('h264')) return 'avc';
     return 'video';
   }
 
+  function codecMatchesPreference(mime, prefCodec) {
+    const pref = String(prefCodec || 'any').toLowerCase();
+    if (!pref || pref === 'any') return true;
+    const fam = detectVideoCodecFamily(mime);
+    if (pref === 'av1' || pref === 'av01') return fam === 'av01';
+    if (pref === 'vp9' || pref === 'vp09') return fam === 'vp9';
+    if (pref === 'avc' || pref === 'avc1' || pref === 'h264') return fam === 'avc1';
+    return true;
+  }
+
+  function defaultCodecRank(mime) {
+    const fam = detectVideoCodecFamily(mime);
+    if (fam === 'av01') return 3;
+    if (fam === 'vp9') return 2;
+    if (fam === 'avc1') return 1;
+    return 0;
+  }
+
+  function getVideoKey(f) {
+    const hdr = isHdrFormat(f) ? 'hdr' : 'sdr';
+    const proto = f.protocol || 'dash';
+    return `${f.itag}:${proto}:${f.width || 0}x${f.height || 0}:${f.fps || 30}:${hdr}`;
+  }
+
+  function extractAudioMetadata(f) {
+    if (!f.__metaExtracted) {
+      f.__metaExtracted = true;
+      const at = f.audioTrack || null;
+      f.__origTrackId = (at && at.id) ? String(at.id) : '';
+      f.__origTrackName = (at && at.displayName) ? String(at.displayName) : '';
+      f.__origIsDefault = !!(at && at.audioIsDefault);
+      f.__isDrc = !!(f.isDrc || /drc/i.test(f.__origTrackId) || /drc/i.test(f.__origTrackName));
+      f.__isVb = !!(f.isVb || /(?:^|[:;])vb=1/i.test(String(f.xtags || '')) || /vb/i.test(f.__origTrackId));
+    }
+    return {
+      trackId: f.__origTrackId,
+      trackName: f.__origTrackName,
+      isDefault: f.__origIsDefault,
+      isDrc: f.__isDrc,
+      isVb: f.__isVb
+    };
+  }
+
+  function getAudioKey(f) {
+    const meta = extractAudioMetadata(f);
+    const m = (f.mimeType || '').toLowerCase();
+    const ch = f.audioChannels || ((m.includes('ec-3') || m.includes('ac-3') || m.includes('iamf')) ? 6 : 2);
+    const variant = meta.isVb ? 'vb' : (meta.isDrc ? 'drc' : 'std');
+    return `${f.itag}:${meta.trackId || 'default'}:${variant}:${ch}`;
+  }
+
   function detectAudioName(f) {
+    const meta = extractAudioMetadata(f);
     const m = (f.mimeType || '').toLowerCase();
     const kbps = Math.round(Number(f.bitrate || f.averageBitrate || 0) / 1000);
     const ch = f.audioChannels || ((m.includes('ec-3') || m.includes('ac-3') || m.includes('iamf')) ? 6 : 2);
-    if (m.includes('ec-3')) return `Dolby Digital Plus (ec-3 ${ch >= 6 ? '5.1' : '2.0'} a ${kbps} kbps)`;
-    if (m.includes('ac-3')) return `Dolby Digital (ac-3 ${ch >= 6 ? '5.1' : '2.0'} a ${kbps} kbps)`;
-    if (m.includes('iamf')) return `Opus Immersive (iamf 5.1 a ${kbps} kbps)`;
-    if (m.includes('opus')) return `Opus ${ch >= 6 ? '5.1' : 'Est\u00e9reo'} (opus a ${kbps} kbps)`;
-    if (m.includes('mp4a')) return `AAC ${ch >= 6 ? '5.1' : 'Est\u00e9reo'} (mp4a a ${kbps} kbps)`;
-    return `\u00c1udio ${ch >= 6 ? '5.1' : '2.0'} (${kbps} kbps)`;
+    let baseLabel = `\u00c1udio ${ch >= 6 ? '5.1' : '2.0'} (${kbps} kbps)`;
+    if (m.includes('ec-3')) baseLabel = `Dolby Digital Plus (ec-3 ${ch >= 6 ? '5.1' : '2.0'} a ${kbps} kbps)`;
+    else if (m.includes('ac-3')) baseLabel = `Dolby Digital (ac-3 ${ch >= 6 ? '5.1' : '2.0'} a ${kbps} kbps)`;
+    else if (m.includes('iamf')) baseLabel = `Opus Immersive (iamf 5.1 a ${kbps} kbps)`;
+    else if (m.includes('opus')) baseLabel = `Opus ${ch >= 6 ? '5.1' : 'Est\u00e9reo'} (opus a ${kbps} kbps)`;
+    else if (m.includes('mp4a')) baseLabel = `AAC ${ch >= 6 ? '5.1' : 'Est\u00e9reo'} (mp4a a ${kbps} kbps)`;
+
+    const suffix = (meta.isDrc ? ' [DRC]' : '') + (meta.isVb ? ' [Voice Boost]' : '');
+    if (meta.trackName && !meta.trackName.includes('kbps)')) {
+      return `${meta.trackName} \u2014 ${baseLabel}${suffix}`;
+    }
+    return `${baseLabel}${suffix}`;
   }
+
+  function mergeCatalogStreams(existingList, incomingList, keyFn) {
+    const map = new Map();
+    if (Array.isArray(existingList)) {
+      for (const item of existingList) {
+        if (item) map.set(keyFn(item), item);
+      }
+    }
+    if (Array.isArray(incomingList)) {
+      for (const item of incomingList) {
+        if (item) map.set(keyFn(item), item);
+      }
+    }
+    return Array.from(map.values());
+  }
+
+  function sortCatalogVideos(list) {
+    return list.slice().sort((a, b) => {
+      const hDiff = Number(b.height || 0) - Number(a.height || 0);
+      if (hDiff !== 0) return hDiff;
+      const fpsDiff = Number(b.fps || 30) - Number(a.fps || 30);
+      if (fpsDiff !== 0) return fpsDiff;
+      const hdrDiff = (isHdrFormat(b) ? 1 : 0) - (isHdrFormat(a) ? 1 : 0);
+      if (hdrDiff !== 0) return hdrDiff;
+      const brA = Number(a.bitrate || a.averageBitrate || 0);
+      const brB = Number(b.bitrate || b.averageBitrate || 0);
+      if (brB !== brA) return brB - brA;
+      return defaultCodecRank(b.mimeType) - defaultCodecRank(a.mimeType);
+    });
+  }
+
+  function audioCodecPriority(a) {
+    const m = (a.mimeType || '').toLowerCase();
+    const ch = Number(a.audioChannels || 2);
+    if (m.includes('ec-3') && ch >= 6) return 50;
+    if (m.includes('ac-3') && ch >= 6) return 40;
+    if (m.includes('iamf') && ch >= 6 && checkNativeIamfSupport()) return 35;
+    if (ch >= 6) return 30;
+    if (m.includes('opus')) return 20;
+    if (m.includes('mp4a')) return 15;
+    return 10;
+  }
+
+  function sortCatalogAudios(list) {
+    const hasExplicitDefault = list.some(a => extractAudioMetadata(a).isDefault);
+    return list.slice().sort((a, b) => {
+      const metaA = extractAudioMetadata(a);
+      const metaB = extractAudioMetadata(b);
+      // 5.1 surround tracks always surface at top, prioritizing default language when multi-language 5.1 exists
+      const chA = Number(a.audioChannels || 2) >= 6 ? 1 : 0;
+      const chB = Number(b.audioChannels || 2) >= 6 ? 1 : 0;
+      if (chA !== chB) return chB - chA;
+      if (hasExplicitDefault && metaA.isDefault !== metaB.isDefault) {
+        return (metaB.isDefault ? 1 : 0) - (metaA.isDefault ? 1 : 0);
+      }
+      const pDiff = audioCodecPriority(b) - audioCodecPriority(a);
+      if (pDiff !== 0) return pDiff;
+      if (metaA.isDrc !== metaB.isDrc) {
+        return (metaA.isDrc ? 1 : 0) - (metaB.isDrc ? 1 : 0);
+      }
+      if (metaA.isVb !== metaB.isVb) {
+        return (metaA.isVb ? 1 : 0) - (metaB.isVb ? 1 : 0);
+      }
+      const brA = Number(a.bitrate || a.averageBitrate || 0);
+      const brB = Number(b.bitrate || b.averageBitrate || 0);
+      if (brB !== brA) return brB - brA;
+      return String(a.displayName || '').localeCompare(String(b.displayName || ''));
+    });
+  }
+
+  function resolveTargetHeight(videos, preferredQualityStr) {
+    if (!videos || !videos.length) return 0;
+    const heights = Array.from(new Set(videos.map(v => Number(v.height || 0)).filter(h => h > 0))).sort((a, b) => b - a);
+    if (!heights.length) return 0;
+    const pref = String(preferredQualityStr || 'auto').toLowerCase();
+    if (!pref || pref === 'auto') return heights[0];
+    const desired = qualityKeyToHeight(pref) || parseInt(pref, 10) || 0;
+    if (!desired) return heights[0];
+    if (heights.includes(desired)) return desired;
+    // Fallback ladder: highest available resolution <= desired, else lowest available
+    const lowerOrEqual = heights.find(h => h <= desired);
+    return lowerOrEqual !== undefined ? lowerOrEqual : heights[heights.length - 1];
+  }
+
+  function selectBestVideoFormat(videos, preferredQualityStr, preferredCodecStr) {
+    if (!videos || !videos.length) return null;
+    const targetHeight = resolveTargetHeight(videos, preferredQualityStr);
+    const atHeight = videos.filter(v => Number(v.height || 0) === targetHeight);
+    const pool = atHeight.length ? atHeight : videos.slice();
+
+    const sorted = pool.slice().sort((a, b) => {
+      const matchA = codecMatchesPreference(a.mimeType, preferredCodecStr) ? 1 : 0;
+      const matchB = codecMatchesPreference(b.mimeType, preferredCodecStr) ? 1 : 0;
+      if (matchA !== matchB) return matchB - matchA;
+      const hdrDiff = (isHdrFormat(b) ? 1 : 0) - (isHdrFormat(a) ? 1 : 0);
+      if (hdrDiff !== 0) return hdrDiff;
+      const fpsDiff = Number(b.fps || 30) - Number(a.fps || 30);
+      if (fpsDiff !== 0) return fpsDiff;
+      const rankDiff = defaultCodecRank(b.mimeType) - defaultCodecRank(a.mimeType);
+      if (rankDiff !== 0) return rankDiff;
+      return Number(b.bitrate || b.averageBitrate || 0) - Number(a.bitrate || a.averageBitrate || 0);
+    });
+    return sorted[0] || null;
+  }
+
+  function sortVideosForPlayback(videos, pin, prefs) {
+    if (!videos || !videos.length) return [];
+    let primaryItag = null;
+    if (pin && pin.manualVideo && pin.videoItag) {
+      primaryItag = Number(pin.videoItag);
+    } else {
+      const best = selectBestVideoFormat(videos, prefs.preferredVideoQuality, prefs.preferredVideoCodec);
+      if (best) primaryItag = Number(best.itag);
+    }
+    const targetHeight = resolveTargetHeight(videos, prefs.preferredVideoQuality);
+    return videos.slice().sort((a, b) => {
+      if (primaryItag) {
+        const isPrimaryA = Number(a.itag) === primaryItag ? 1 : 0;
+        const isPrimaryB = Number(b.itag) === primaryItag ? 1 : 0;
+        if (isPrimaryA !== isPrimaryB) return isPrimaryB - isPrimaryA;
+      }
+      const matchCodecA = codecMatchesPreference(a.mimeType, prefs.preferredVideoCodec) ? 1 : 0;
+      const matchCodecB = codecMatchesPreference(b.mimeType, prefs.preferredVideoCodec) ? 1 : 0;
+      const matchHeightA = Number(a.height || 0) === targetHeight ? 1 : 0;
+      const matchHeightB = Number(b.height || 0) === targetHeight ? 1 : 0;
+      if (matchHeightA !== matchHeightB) return matchHeightB - matchHeightA;
+      if (matchCodecA !== matchCodecB) return matchCodecB - matchCodecA;
+      const hDiff = Number(b.height || 0) - Number(a.height || 0);
+      if (hDiff !== 0) return hDiff;
+      const hdrDiff = (isHdrFormat(b) ? 1 : 0) - (isHdrFormat(a) ? 1 : 0);
+      if (hdrDiff !== 0) return hdrDiff;
+      const fpsDiff = Number(b.fps || 30) - Number(a.fps || 30);
+      if (fpsDiff !== 0) return fpsDiff;
+      return Number(b.bitrate || b.averageBitrate || 0) - Number(a.bitrate || a.averageBitrate || 0);
+    });
+  }
+
+  function parseHlsMasterPlaylist(m3u8Text, vid) {
+    if (!m3u8Text || typeof m3u8Text !== 'string') return [];
+    const lines = m3u8Text.split(/\r?\n/);
+    const variants = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line.startsWith('#EXT-X-STREAM-INF:')) continue;
+      const attrs = line.slice('#EXT-X-STREAM-INF:'.length);
+      const uri = (lines[i + 1] || '').trim();
+      const bwMatch = attrs.match(/(?:^|,)BANDWIDTH=(\d+)/i);
+      const avgBwMatch = attrs.match(/AVERAGE-BANDWIDTH=(\d+)/i);
+      const resMatch = attrs.match(/RESOLUTION=(\d+)x(\d+)/i);
+      const fpsMatch = attrs.match(/FRAME-RATE=([\d.]+)/i);
+      const codecsMatch = attrs.match(/CODECS="([^"]+)"/i);
+      const rangeMatch = attrs.match(/VIDEO-RANGE=([A-Z0-9_-]+)/i);
+      const itagMatch = uri.match(/[?&/]itag[=/](\d+)/i);
+
+      const bitrate = Number((avgBwMatch && avgBwMatch[1]) || (bwMatch && bwMatch[1]) || 0);
+      const width = resMatch ? Number(resMatch[1]) : 0;
+      const height = resMatch ? Number(resMatch[2]) : 0;
+      const fps = fpsMatch ? Math.round(Number(fpsMatch[1])) : 30;
+      const codecs = codecsMatch ? codecsMatch[1] : '';
+      const isHdr = (rangeMatch && rangeMatch[1] !== 'SDR') || /\.(16|18)\.\d{2}\.\d/.test(codecs);
+      const itag = itagMatch ? `${itagMatch[1]}-hls` : `hls-${height}p-${ Math.round(bitrate / 1000) }k`;
+      const mbps = (bitrate / 1000000).toFixed(2);
+      const codecLabel = detectVideoCodecLabel(codecs, isHdr);
+
+      variants.push({
+        itag: itag,
+        protocol: 'm3u8_native',
+        width: width,
+        height: height,
+        fps: fps,
+        bitrate: bitrate,
+        mimeType: `video/mp4; codecs="${codecs}"`,
+        __isHdr: isHdr,
+        quality: heightToQualityKey(height),
+        qualityLabel: `${height}p, ${fps}fps, ${mbps}Mbps, ${codecLabel} [HLS]`,
+        url: uri,
+        playableInCobaltAndroid: false,
+        unplayableReason: 'COBALT_ANDROID_NO_HLS_DEMUXER'
+      });
+    }
+    if (vid && catalog[vid]) {
+      catalog[vid].hlsVariants = variants;
+    }
+    return variants;
+  }
+
+  window.__ttL1ParseHlsMasterPlaylist = parseHlsMasterPlaylist;
 
   function processPlayerPayload(obj) {
     if (!obj || typeof obj !== 'object') return obj;
     const sd = obj.streamingData;
     if (!sd || !Array.isArray(sd.adaptiveFormats) || !sd.adaptiveFormats.length) return obj;
 
-    const vid = (obj.videoDetails && obj.videoDetails.videoId) || '';
+    const vid = (obj.videoDetails && obj.videoDetails.videoId) || getCurrentVideoId() || '';
     const rawVids = [];
     const rawAuds = [];
 
     for (const f of sd.adaptiveFormats) {
       if (!f || !f.mimeType) continue;
       if (f.mimeType.startsWith('video/')) {
+        if (!f.__origQualityLabel && f.qualityLabel) {
+          f.__origQualityLabel = f.qualityLabel;
+        }
         const hdr = isHdrFormat(f);
+        f.__isHdr = hdr;
         const codec = detectVideoCodecLabel(f.mimeType, hdr);
         const fps = Number(f.fps || 30);
         const mbps = (Number(f.bitrate || f.averageBitrate || 0) / 1000000).toFixed(2);
-        // SmartTube naming convention: "2160p, 30fps, 24.33Mbps, vp9 HDR"
+        f.quality = heightToQualityKey(f.height);
+        // SmartTube naming convention: "2160p, 60fps, 82.49Mbps, av1 HDR"
         f.qualityLabel = `${f.height}p, ${fps}fps, ${mbps}Mbps, ${codec}`;
+        f.videoKey = getVideoKey(f);
         rawVids.push(f);
       } else if (f.mimeType.startsWith('audio/')) {
         const m = f.mimeType.toLowerCase();
+        if (m.includes('iamf') && !checkNativeIamfSupport()) {
+          continue;
+        }
         if (!f.audioChannels && (m.includes('ec-3') || m.includes('ac-3') || m.includes('iamf'))) {
           f.audioChannels = 6;
         }
+        extractAudioMetadata(f);
+        f.audioKey = getAudioKey(f);
         f.displayName = detectAudioName(f);
-        if (!f.audioTrack) f.audioTrack = { displayName: f.displayName, id: String(f.itag) };
-        else f.audioTrack.displayName = f.displayName;
+        if (!f.audioTrack) {
+          f.audioTrack = {
+            displayName: f.displayName,
+            id: f.audioKey,
+            audioIsDefault: f.__origIsDefault
+          };
+        } else {
+          f.audioTrack = Object.assign({}, f.audioTrack, {
+            displayName: f.displayName,
+            id: f.audioKey
+          });
+        }
         rawAuds.push(f);
       }
     }
 
     if (vid) {
       const existing = catalog[vid];
-      const newVids = rawVids.slice().sort((a, b) => (b.height - a.height) || (b.bitrate - a.bitrate));
-      const newAuds = rawAuds.slice().sort((a, b) => (b.audioChannels - a.audioChannels) || (b.bitrate - a.bitrate));
+      const mergedVids = sortCatalogVideos(
+        mergeCatalogStreams(existing && existing.videos, rawVids, getVideoKey)
+      );
+      const mergedAuds = sortCatalogAudios(
+        mergeCatalogStreams(existing && existing.audios, rawAuds, getAudioKey)
+      );
       catalog[vid] = {
         videoId: vid,
         title: (obj.videoDetails && obj.videoDetails.title) || (existing && existing.title) || '',
-        // Preserve catalog so format lists never shrink when streams are pinned
-        videos: (existing && existing.videos && existing.videos.length > newVids.length) ? existing.videos : newVids,
-        audios: (existing && existing.audios && existing.audios.length > newAuds.length) ? existing.audios : newAuds,
+        videos: mergedVids,
+        audios: mergedAuds,
+        hlsManifestUrl: sd.hlsManifestUrl || (existing && existing.hlsManifestUrl) || null,
+        hlsVariants: (existing && existing.hlsVariants) || [],
         updatedAt: Date.now()
       };
     }
 
     const pin = getPin(vid);
-    let vids = rawVids;
-    let auds = rawAuds;
+    const prefs = getUserPreferences();
 
-    // Strict Video Pinning: When user explicitly selects a quality/format,
-    // only feed that video stream so YouTube player CANNOT starve or downgrade!
-    if (pin.videoItag) {
-      const match = rawVids.filter(f => Number(f.itag) === Number(pin.videoItag));
-      if (match.length) {
-        vids = match;
+    // Keep all video formats in adaptiveFormats (ordered by manual pin or user preference)
+    // so YouTube's native formatId selector (loader.Om) and ABR fallback work without
+    // ever destroying options or freezing when a resolution/codec is missing.
+    const fullVids = (vid && catalog[vid] && catalog[vid].videos.length >= rawVids.length)
+      ? catalog[vid].videos
+      : rawVids;
+    const vids = sortVideosForPlayback(fullVids, pin, prefs);
+
+    let auds = (vid && catalog[vid] && catalog[vid].audios.length >= rawAuds.length)
+      ? catalog[vid].audios.slice()
+      : sortCatalogAudios(rawAuds);
+
+    // Audio Track Selection: When user explicitly selects an audio track (by composite audioKey or itag),
+    // feed that exact audio stream so YouTube player plays the selected language/DRC/5.1 track.
+    if (pin.audioKey || pin.audioItag) {
+      let match = [];
+      if (pin.audioKey) {
+        match = auds.filter(a => a.audioKey === pin.audioKey);
       }
-    }
-
-    // Strict Audio Pinning: When user explicitly selects an audio track (e.g. Dolby Digital 5.1),
-    // only feed that audio stream so YouTube player plays it directly!
-    if (pin.audioItag) {
-      const match = rawAuds.filter(a => Number(a.itag) === Number(pin.audioItag));
+      if (!match.length && pin.audioItag) {
+        match = auds.filter(a => Number(a.itag) === Number(pin.audioItag));
+      }
       if (match.length) {
         auds = match;
       }
-    } else {
-      // By default prioritize Dolby Digital Plus (ec-3 5.1), then Dolby Digital (ac-3 5.1),
-      // then Opus Immersive (iamf 5.1), then other multi-channel, then stereo!
-      const ddp = rawAuds.filter(a => (a.mimeType || '').toLowerCase().includes('ec-3'));
-      const dd = rawAuds.filter(a => (a.mimeType || '').toLowerCase().includes('ac-3'));
-      const iamf = rawAuds.filter(a => (a.mimeType || '').toLowerCase().includes('iamf'));
-      const otherMulti = rawAuds.filter(a => (a.audioChannels || 2) >= 6 && !ddp.includes(a) && !dd.includes(a) && !iamf.includes(a));
-      const stereo = rawAuds.filter(a => (a.audioChannels || 2) < 6);
-      auds = ddp.concat(dd, iamf, otherMulti, stereo);
     }
 
     sd.adaptiveFormats = vids.concat(auds);
     return obj;
   }
 
-  // Intercept JSON.parse
-  const origJsonParse = window.JSON.parse;
-  window.JSON.parse = function () {
-    const res = origJsonParse.apply(this, arguments);
+  // 10. TubeRush UI Rebranding (preserves original author credits: Reis Can / reisxd)
+  function rebrandString(str) {
+    if (typeof str !== 'string' || !str.includes('TizenTube')) return str;
+    if (str.includes('Reis Can') || str.includes('reisxd') || str.includes('github.com/')) return str;
+    return str.replace(/TizenTube\s+Cobalt/g, 'TubeRush').replace(/TizenTube/g, 'TubeRush');
+  }
+
+  function rebrandObjectInPlace(node, depth) {
+    if (!node || typeof node !== 'object' || (depth || 0) > 12) return node;
+    const d = (depth || 0) + 1;
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        if (typeof node[i] === 'string') node[i] = rebrandString(node[i]);
+        else if (node[i] && typeof node[i] === 'object') rebrandObjectInPlace(node[i], d);
+      }
+      return node;
+    }
+    for (const k of Object.keys(node)) {
+      const val = node[k];
+      if (typeof val === 'string') {
+        node[k] = rebrandString(val);
+      } else if (val && typeof val === 'object') {
+        rebrandObjectInPlace(val, d);
+      }
+    }
+    return node;
+  }
+
+  // 11. Intercept JSON.parse with Property Trap so tizentube.js's destructive codec filter
+  // on adaptiveFormats is neutralized while preserving all TizenTube features (adblock, SponsorBlock, UI).
+  const nativeJsonParse = window.JSON.parse.bind(window.JSON);
+  let externalJsonParseWrapper = null;
+  let inExternalJsonParse = false;
+
+  function masterJsonParse() {
+    if (inExternalJsonParse || !externalJsonParseWrapper) {
+      const rawRes = nativeJsonParse.apply(this, arguments);
+      try {
+        if (rawRes && rawRes.streamingData && Array.isArray(rawRes.streamingData.adaptiveFormats)) {
+          if (inExternalJsonParse) {
+            Object.defineProperty(rawRes, '__ttRawAdaptiveFormats', {
+              value: rawRes.streamingData.adaptiveFormats.slice(),
+              configurable: true,
+              enumerable: false
+            });
+            return rawRes;
+          }
+          return processPlayerPayload(rawRes);
+        }
+      } catch (e) {}
+      return rawRes;
+    }
+
+    inExternalJsonParse = true;
+    let res;
     try {
-      if (res && res.streamingData && Array.isArray(res.streamingData.adaptiveFormats)) {
-        return processPlayerPayload(res);
+      res = externalJsonParseWrapper.apply(this, arguments);
+    } finally {
+      inExternalJsonParse = false;
+    }
+
+    try {
+      if (res && typeof res === 'object') {
+        if (res.streamingData && Array.isArray(res.streamingData.adaptiveFormats)) {
+          if (Array.isArray(res.__ttRawAdaptiveFormats) &&
+              res.__ttRawAdaptiveFormats.length > res.streamingData.adaptiveFormats.length) {
+            res.streamingData.adaptiveFormats = res.__ttRawAdaptiveFormats.slice();
+          }
+          delete res.__ttRawAdaptiveFormats;
+          processPlayerPayload(res);
+        }
+        if (res.openPopupAction || res.settingCategoryCollectionRenderer || res.overlayPanelRenderer) {
+          rebrandObjectInPlace(res, 0);
+        }
       }
     } catch (e) {}
     return res;
-  };
+  }
+
+  try {
+    Object.defineProperty(window.JSON, 'parse', {
+      configurable: true,
+      enumerable: true,
+      get: function () {
+        return masterJsonParse;
+      },
+      set: function (fn) {
+        if (typeof fn === 'function' && fn !== masterJsonParse) {
+          externalJsonParseWrapper = fn;
+        }
+      }
+    });
+  } catch (e) {
+    window.JSON.parse = masterJsonParse;
+  }
+
+  // 12. Normalize GitHub Releases payload for TubeRush Self-Updater (U01)
+  function parseSemverTuple(verStr) {
+    const m = String(verStr || '').replace(/^v/i, '').match(/(\d+)\.(\d+)\.(\d+)/);
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [0, 0, 0];
+  }
+
+  function isRemoteVersionNewer(remoteTag, currentVer) {
+    const r = parseSemverTuple(remoteTag);
+    const c = parseSemverTuple(currentVer);
+    for (let i = 0; i < 3; i++) {
+      if (r[i] > c[i]) return true;
+      if (r[i] < c[i]) return false;
+    }
+    return false;
+  }
+
+  function getInstalledAppVersion() {
+    try {
+      if (window.h5vcc && window.h5vcc.system && typeof window.h5vcc.system.getVersion === 'function') {
+        const v = window.h5vcc.system.getVersion();
+        if (v) return String(v).replace(/^v/i, '');
+      }
+    } catch (e) {}
+    return '2.0.3';
+  }
+
+  function normalizeReleasePayload(data) {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.assets)) return data;
+    try {
+      const installedVer = getInstalledAppVersion();
+      if (data.tag_name && installedVer && !isRemoteVersionNewer(data.tag_name, installedVer)) {
+        data.tag_name = 'v' + installedVer;
+      }
+    } catch (e) {}
+    const apkAssets = data.assets.filter(a => a && typeof a.name === 'string' && a.name.toLowerCase().endsWith('.apk'));
+    if (apkAssets.length) {
+      const armv7Asset = apkAssets.find(a => /armv7|armeabi-v7a|arm\.apk/i.test(a.name)) || apkAssets[0];
+      const arm64Asset = apkAssets.find(a => /arm64|aarch64/i.test(a.name)) || armv7Asset;
+      if (armv7Asset && !data.assets.some(a => a && a.name && a.name.includes('arm.apk'))) {
+        data.assets.push(Object.assign({}, armv7Asset, { name: 'TubeRush-arm.apk' }));
+      }
+      if (arm64Asset && !data.assets.some(a => a && a.name && a.name.includes('arm64.apk'))) {
+        data.assets.push(Object.assign({}, arm64Asset, { name: 'TubeRush-arm64.apk' }));
+      }
+    }
+    return data;
+  }
+
+  // Intercept window.fetch for TubeRush Updater redirect
+  try {
+    if (typeof window.fetch === 'function') {
+      const origFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        try {
+          const urlStr = typeof input === 'string' ? input : (input && input.url) || '';
+          if (urlStr.includes('api.github.com/repos/reisxd/TizenTubeCobalt/releases')) {
+            return origFetch(TUBERUSH_RELEASES_API, init).then(resp => {
+              const origJson = resp.json.bind(resp);
+              resp.json = function () {
+                return origJson().then(data => normalizeReleasePayload(data));
+              };
+              return resp;
+            });
+          }
+        } catch (e) {}
+        return origFetch(input, init);
+      };
+    }
+  } catch (e) {}
 
   // Intercept Response.prototype.json
   try {
-    const origRespJson = Response.prototype.json;
-    Response.prototype.json = function () {
-      return origRespJson.apply(this, arguments).then(data => {
-        try {
-          if (data && data.streamingData && Array.isArray(data.streamingData.adaptiveFormats)) {
-            return processPlayerPayload(data);
-          }
-        } catch (e) {}
-        return data;
-      });
-    };
+    if (window.Response && Response.prototype && Response.prototype.json) {
+      const origRespJson = Response.prototype.json;
+      Response.prototype.json = function () {
+        const respUrl = this && this.url ? String(this.url) : '';
+        return origRespJson.apply(this, arguments).then(data => {
+          try {
+            if (respUrl.includes('api.github.com/repos/HeliumMarcos/TubeRush/releases') ||
+                respUrl.includes('api.github.com/repos/reisxd/TizenTubeCobalt/releases')) {
+              return normalizeReleasePayload(data);
+            }
+            if (data && data.streamingData && Array.isArray(data.streamingData.adaptiveFormats)) {
+              return processPlayerPayload(data);
+            }
+          } catch (e) {}
+          return data;
+        });
+      };
+    }
   } catch (e) {}
 
   function getCurrentVideoId() {
@@ -361,8 +910,11 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         if (d && d.video_id) return d.video_id;
       }
     } catch (e) {}
-    const m = location.href.match(/[?&#/]v=([a-zA-Z0-9_-]{6,})/) || location.href.match(/\/watch\/([a-zA-Z0-9_-]{6,})/);
-    return m ? m[1] : '';
+    try {
+      const m = location.href.match(/[?&#/]v=([a-zA-Z0-9_-]{6,})/) || location.href.match(/\/watch\/([a-zA-Z0-9_-]{6,})/);
+      return m ? m[1] : '';
+    } catch (e) {}
+    return '';
   }
 
   function reloadPlayerAtCurrentTime(vid) {
@@ -397,7 +949,7 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     location.reload();
   }
 
-  // Resume playback position smoothly after stream switch
+  // Resume playback position smoothly after audio stream switch
   function checkResume() {
     const vid = getCurrentVideoId();
     if (!vid) return;
@@ -422,51 +974,86 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
   }
   setInterval(checkResume, 1000);
 
-  // Helper to determine currently active audio itag for accurate checkmark reporting
-  function getCurrentlyPlayingAudioItag(vid) {
-    const pin = getPin(vid);
-    if (pin && pin.audioItag) return Number(pin.audioItag);
+  function getActiveItagsFromStats(p) {
+    let videoItag = null;
+    let audioItag = null;
     try {
-      const p = document.getElementById('ytlr-player__player-container-player');
-      if (p && p.getStatsForNerds) {
-        const s = p.getStatsForNerds();
-        if (s && s.codecs) {
-          const m = s.codecs.match(/\/\s*[a-zA-Z0-9.-]+\s*\((\d+)\)/);
-          if (m) return Number(m[1]);
+      const player = p || document.getElementById('ytlr-player__player-container-player');
+      if (player && typeof player.getStatsForNerds === 'function') {
+        const s = player.getStatsForNerds();
+        if (s && typeof s.codecs === 'string') {
+          const vm = s.codecs.match(/^\s*[a-zA-Z0-9.-]+\s*\((\d+)\)/);
+          if (vm) videoItag = Number(vm[1]);
+          const am = s.codecs.match(/\/\s*[a-zA-Z0-9.-]+\s*\((\d+)\)/);
+          if (am) audioItag = Number(am[1]);
         }
       }
     } catch (e) {}
+    return { videoItag, audioItag };
+  }
+
+  function getCurrentlyPlayingVideoFormat(vid, p) {
     const cat = (vid && catalog[vid]) || null;
-    if (cat && cat.audios && cat.audios.length) {
-      const ddp = cat.audios.find(a => Number(a.itag) === 328);
-      if (ddp) return 328;
-      return Number(cat.audios[0].itag);
+    if (!cat || !cat.videos || !cat.videos.length) return null;
+    const stats = getActiveItagsFromStats(p);
+    if (stats.videoItag) {
+      const byStats = cat.videos.find(v => Number(v.itag) === stats.videoItag);
+      if (byStats) return byStats;
     }
-    return null;
+    const pin = getPin(vid);
+    if (pin && pin.videoItag) {
+      const byPin = cat.videos.find(v => Number(v.itag) === Number(pin.videoItag));
+      if (byPin) return byPin;
+    }
+    const prefs = getUserPreferences();
+    return selectBestVideoFormat(cat.videos, prefs.preferredVideoQuality, prefs.preferredVideoCodec) || cat.videos[0];
+  }
+
+  // Helper to determine currently active audio track for accurate checkmark reporting
+  function getCurrentlyPlayingAudioTrack(vid, p) {
+    const cat = (vid && catalog[vid]) || null;
+    if (!cat || !cat.audios || !cat.audios.length) return null;
+    const pin = getPin(vid);
+    if (pin && pin.audioKey) {
+      const byKey = cat.audios.find(a => a.audioKey === pin.audioKey);
+      if (byKey) return byKey;
+    }
+    if (pin && pin.audioItag) {
+      const byPin = cat.audios.find(a => Number(a.itag) === Number(pin.audioItag));
+      if (byPin) return byPin;
+    }
+    const stats = getActiveItagsFromStats(p);
+    if (stats.audioItag) {
+      const byStats = cat.audios.find(a => Number(a.itag) === stats.audioItag);
+      if (byStats) return byStats;
+    }
+    return cat.audios[0];
   }
 
   // Create robust AudioTrack object fully conforming to YouTube TV player & Kabuki UI interfaces
-  function createAudioTrackObj(a, curItag) {
-    const id = String(a.itag);
-    const name = a.displayName;
-    const isDef = (Number(a.itag) === Number(curItag));
+  function createAudioTrackObj(a, activeAudio) {
+    const key = a.audioKey || getAudioKey(a);
+    const name = a.displayName || detectAudioName(a);
+    const isDef = activeAudio ? (key === (activeAudio.audioKey || getAudioKey(activeAudio))) : false;
     const langInfo = {
-      id: id,
+      id: key,
       name: name,
       isDefault: isDef,
       isAutoDubbed: false,
       getName: function () { return name; },
-      getId: function () { return id; },
+      getId: function () { return key; },
       getIsDefault: function () { return isDef; },
       getIsAutoDubbed: function () { return false; },
       toString: function () { return name; }
     };
     return {
-      id: id,
+      id: key,
+      itag: Number(a.itag),
+      audioKey: key,
       xb: langInfo,
       getLanguageInfo: function () { return langInfo; },
       getName: function () { return name; },
-      getId: function () { return id; },
+      getId: function () { return key; },
       getIsDefault: function () { return isDef; },
       isAutoDubbed: function () { return false; },
       captionTracks: [],
@@ -475,31 +1062,83 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     };
   }
 
-  // 9. Hook native YouTube TV Player API methods for seamless UI integration!
-  function hookPlayerApi() {
-    const p = document.getElementById('ytlr-player__player-container-player');
-    if (!p) return;
+  function hookYttvResolveCommand() {
+    try {
+      if (!window._yttv || typeof window._yttv !== 'object') return;
+      for (const k of Object.keys(window._yttv)) {
+        const entry = window._yttv[k];
+        const inst = entry && entry.instance;
+        if (inst && typeof inst.resolveCommand === 'function' && !inst.__ttL1ResolveHooked) {
+          const origResolve = inst.resolveCommand.bind(inst);
+          inst.resolveCommand = function (cmd, arg2) {
+            try {
+              if (cmd && typeof cmd === 'object') {
+                rebrandObjectInPlace(cmd, 0);
+              }
+            } catch (e) {}
+            return origResolve(cmd, arg2);
+          };
+          inst.__ttL1ResolveHooked = true;
+        }
+      }
+    } catch (e) {}
+  }
 
-    // A. Native "Qualidade" Menu: Return all video formats without deduplicating codecs!
-    const origQDataMsg = p.getAvailableQualityDataAndMessaging;
+  // 13. Hook native YouTube TV Player API methods idempotently (once per player instance)
+  function hookPlayerApi() {
+    hookYttvResolveCommand();
+    const p = document.getElementById('ytlr-player__player-container-player');
+    if (!p || p.__ttL1Hooked) return;
+    p.__ttL1Hooked = true;
+
+    const origQDataMsg = typeof p.getAvailableQualityDataAndMessaging === 'function'
+      ? p.getAvailableQualityDataAndMessaging.bind(p)
+      : null;
+    const origSetQuality = typeof p.setPlaybackQualityRange === 'function'
+      ? p.setPlaybackQualityRange.bind(p)
+      : null;
+    const origGetQualityLabel = typeof p.getPlaybackQualityLabel === 'function'
+      ? p.getPlaybackQualityLabel.bind(p)
+      : null;
+    const origGetUserQualityPref = typeof p.getUserPlaybackQualityPreference === 'function'
+      ? p.getUserPlaybackQualityPreference.bind(p)
+      : null;
+
+    // A. Native "Qualidade" Menu: Return all video formats with valid YouTube quality keys + formatId
     p.getAvailableQualityDataAndMessaging = function () {
       const vid = getCurrentVideoId();
       const cat = (vid && catalog[vid]) || null;
       if (cat && cat.videos && cat.videos.length) {
-        const pin = getPin(vid);
-        const qualityData = cat.videos.map(f => {
+        const activeVid = getCurrentlyPlayingVideoFormat(vid, p);
+        const prefs = getUserPreferences();
+        // Order same-resolution formats so preferredVideoCodec appears first at each height
+        // (so tizentube.js's Mr() `.find(e => parseInt(e.qualityLabel) === n)` picks the preferred codec!)
+        const ordered = cat.videos.slice().sort((a, b) => {
+          const hDiff = Number(b.height || 0) - Number(a.height || 0);
+          if (hDiff !== 0) return hDiff;
+          const matchA = codecMatchesPreference(a.mimeType, prefs.preferredVideoCodec) ? 1 : 0;
+          const matchB = codecMatchesPreference(b.mimeType, prefs.preferredVideoCodec) ? 1 : 0;
+          if (matchA !== matchB) return matchB - matchA;
+          const fpsDiff = Number(b.fps || 30) - Number(a.fps || 30);
+          if (fpsDiff !== 0) return fpsDiff;
+          const hdrDiff = (isHdrFormat(b) ? 1 : 0) - (isHdrFormat(a) ? 1 : 0);
+          if (hdrDiff !== 0) return hdrDiff;
+          return Number(b.bitrate || b.averageBitrate || 0) - Number(a.bitrate || a.averageBitrate || 0);
+        });
+        const qualityData = ordered.map(f => {
+          const qKey = heightToQualityKey(f.height);
           return {
+            formatId: String(f.itag),
             qualityLabel: f.qualityLabel,
-            // Assign unique quality key per format so YouTube Leanback doesn't collapse AV1/VP9/AVC!
-            quality: 'fmt_' + f.itag,
+            quality: qKey,
             isPlayable: true,
             formatItag: f.itag,
-            isCurrent: pin.videoItag ? (Number(pin.videoItag) === Number(f.itag)) : undefined
+            isCurrent: activeVid ? (Number(activeVid.itag) === Number(f.itag)) : false
           };
         });
-        return { qualityData };
+        return { qualityData, qualityMessagingFormattedString: undefined };
       }
-      return origQDataMsg ? origQDataMsg.apply(this, arguments) : { qualityData: [] };
+      return origQDataMsg ? origQDataMsg() : { qualityData: [] };
     };
 
     p.getAvailableQualityData = function () {
@@ -513,54 +1152,146 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       return [];
     };
 
-    // When the user clicks a quality in the native "Qualidade" menu:
-    const origSetQuality = p.setPlaybackQualityRange;
-    p.setPlaybackQualityRange = function (minQ, maxQ) {
+    // Report active video format's qualityLabel so Kabuki checkmark matches real playback (V05)
+    p.getPlaybackQualityLabel = function () {
+      const vid = getCurrentVideoId();
+      const active = getCurrentlyPlayingVideoFormat(vid, p);
+      if (active && active.qualityLabel) return active.qualityLabel;
+      return origGetQualityLabel ? origGetQualityLabel() : '';
+    };
+
+    p.getUserPlaybackQualityPreference = function () {
+      const vid = getCurrentVideoId();
+      const pin = getPin(vid);
+      if (pin && pin.manualVideo && pin.videoItag) {
+        const cat = (vid && catalog[vid]) || null;
+        const m = cat && cat.videos && cat.videos.find(v => Number(v.itag) === Number(pin.videoItag));
+        return m ? heightToQualityKey(m.height) : 'hd2160';
+      }
+      const prefs = getUserPreferences();
+      if (prefs.preferredVideoQuality && prefs.preferredVideoQuality !== 'auto') {
+        const cat = (vid && catalog[vid]) || null;
+        if (cat && cat.videos && cat.videos.length) {
+          const h = resolveTargetHeight(cat.videos, prefs.preferredVideoQuality);
+          return heightToQualityKey(h);
+        }
+        return heightToQualityKey(qualityKeyToHeight(prefs.preferredVideoQuality));
+      }
+      if (origGetUserQualityPref) {
+        const res = origGetUserQualityPref();
+        if (res) return res;
+      }
+      return 'auto';
+    };
+
+    // Non-destructive video quality selection (supports both Kabuki 3-arg manual selection
+    // and TizenTube 2-arg startup/preference selection without freezing or hiding formats)
+    p.setPlaybackQualityRange = function (minQ, maxQ, formatId) {
       const vid = getCurrentVideoId();
       const cat = (vid && catalog[vid]) || null;
-      const qStr = String(maxQ || minQ || '');
-      if (qStr === 'auto' || qStr === 'highres') {
-        setPin(vid, { videoItag: null });
-        reloadPlayerAtCurrentTime(vid);
-        return origSetQuality ? origSetQuality.apply(this, arguments) : undefined;
+      const qStr = String(maxQ || minQ || '').trim();
+      const prefs = getUserPreferences();
+
+      // Case 1: User selected "Automática" in the native menu
+      if (qStr === 'auto') {
+        setPin(vid, { videoItag: null, manualVideo: false });
+        let ret;
+        if (origSetQuality) {
+          if (prefs.preferredVideoQuality && prefs.preferredVideoQuality !== 'auto' && cat && cat.videos && cat.videos.length) {
+            const best = selectBestVideoFormat(cat.videos, prefs.preferredVideoQuality, prefs.preferredVideoCodec);
+            if (best) {
+              const qKey = heightToQualityKey(best.height);
+              ret = origSetQuality(qKey, qKey, String(best.itag));
+            } else {
+              ret = origSetQuality('auto', 'auto', '');
+            }
+          } else {
+            ret = origSetQuality('auto', 'auto', '');
+          }
+        }
+        try {
+          p.dispatchEvent(new CustomEvent('onPlaybackQualityChange'));
+        } catch (e) {}
+        return ret;
       }
+
       if (cat && cat.videos && cat.videos.length) {
-        let itagMatch = null;
-        const itagRx = qStr.match(/fmt_(\d+)/);
-        if (itagRx) itagMatch = Number(itagRx[1]);
-        if (!itagMatch) {
-          const match = cat.videos.find(v => v.qualityLabel === qStr || ('fmt_' + v.itag) === qStr || ('hd' + v.height) === qStr);
-          if (match) itagMatch = Number(match.itag);
+        // Case 2: Explicit formatId passed by Kabuki when user clicks a specific format in "Qualidade do vídeo atual"
+        let explicitItag = formatId ? Number(formatId) : null;
+        if (!explicitItag) {
+          const fmtRx = qStr.match(/^fmt_(\d+)$/);
+          if (fmtRx) explicitItag = Number(fmtRx[1]);
         }
-        if (itagMatch) {
-          setPin(vid, { videoItag: itagMatch });
-          reloadPlayerAtCurrentTime(vid);
-          return;
+        if (!explicitItag) {
+          const byLabel = cat.videos.find(v => v.qualityLabel === qStr);
+          if (byLabel) explicitItag = Number(byLabel.itag);
+        }
+
+        if (explicitItag) {
+          const targetFmt = cat.videos.find(v => Number(v.itag) === explicitItag);
+          if (targetFmt) {
+            setPin(vid, { videoItag: Number(targetFmt.itag), manualVideo: true });
+            const qKey = heightToQualityKey(targetFmt.height);
+            const ret = origSetQuality ? origSetQuality(qKey, qKey, String(targetFmt.itag)) : undefined;
+            try {
+              p.dispatchEvent(new CustomEvent('onPlaybackQualityChange'));
+            } catch (e) {}
+            return ret;
+          }
+        }
+
+        // Case 3: Automatic preference call from TizenTube (e.g. setPlaybackQualityRange("hd2160", "hd2160")
+        // or setPlaybackQualityRange("highres", "highres") when preferred resolution is absent on video!)
+        const pin = getPin(vid);
+        if (pin && pin.manualVideo && pin.videoItag) {
+          const pinnedFmt = cat.videos.find(v => Number(v.itag) === Number(pin.videoItag));
+          if (pinnedFmt) {
+            const qKey = heightToQualityKey(pinnedFmt.height);
+            return origSetQuality ? origSetQuality(qKey, qKey, String(pinnedFmt.itag)) : undefined;
+          }
+        }
+
+        // Resolve desired resolution safely (never pass "highres" 4320p on a 1080p/2160p video!)
+        const requestedPref = (qStr === 'highres' && prefs.preferredVideoQuality && prefs.preferredVideoQuality !== 'auto')
+          ? prefs.preferredVideoQuality
+          : qStr;
+        const bestFmt = selectBestVideoFormat(cat.videos, requestedPref, prefs.preferredVideoCodec);
+        if (bestFmt) {
+          setPin(vid, { videoItag: Number(bestFmt.itag), manualVideo: false });
+          const qKey = heightToQualityKey(bestFmt.height);
+          const ret = origSetQuality ? origSetQuality(qKey, qKey, String(bestFmt.itag)) : undefined;
+          try {
+            p.dispatchEvent(new CustomEvent('onPlaybackQualityChange'));
+          } catch (e) {}
+          return ret;
         }
       }
-      return origSetQuality ? origSetQuality.apply(this, arguments) : undefined;
+
+      return origSetQuality ? origSetQuality(minQ, maxQ, formatId) : undefined;
     };
 
-    p.setPlaybackQuality = function (q) {
-      return p.setPlaybackQualityRange(q, q);
+    p.setPlaybackQuality = function (q, formatId) {
+      return p.setPlaybackQualityRange(q, q, formatId);
     };
 
-    // B. Native "Faixa de áudio" Menu: List all surround (5.1 ec-3, ac-3, iamf) & stereo tracks!
+    // B. Native "Faixa de áudio" Menu: List all surround (5.1 ec-3, ac-3), multi-language & DRC tracks!
     p.getAvailableAudioTracks = function () {
       const vid = getCurrentVideoId();
       const cat = (vid && catalog[vid]) || null;
       if (cat && cat.audios && cat.audios.length) {
-        const curItag = getCurrentlyPlayingAudioItag(vid);
-        // Deduplicate tracks by displayName so duplicate DRC bitrates are not repeated
+        const activeAudio = getCurrentlyPlayingAudioTrack(vid, p);
+        // Deduplicate by composite audioKey (itag + trackId + isDrc + channels) so
+        // multi-language tracks (pt-BR, en-US, es-US) and DRC variants are NEVER collapsed!
         const seen = new Set();
         const uniqueAuds = [];
         for (const a of cat.audios) {
-          if (!seen.has(a.displayName)) {
-            seen.add(a.displayName);
+          const key = a.audioKey || getAudioKey(a);
+          if (!seen.has(key)) {
+            seen.add(key);
             uniqueAuds.push(a);
           }
         }
-        return uniqueAuds.map(a => createAudioTrackObj(a, curItag));
+        return uniqueAuds.map(a => createAudioTrackObj(a, activeAudio));
       }
       return [];
     };
@@ -569,9 +1300,8 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       const vid = getCurrentVideoId();
       const cat = (vid && catalog[vid]) || null;
       if (cat && cat.audios && cat.audios.length) {
-        const curItag = getCurrentlyPlayingAudioItag(vid);
-        const active = cat.audios.find(a => Number(a.itag) === curItag) || cat.audios[0];
-        return createAudioTrackObj(active, curItag);
+        const activeAudio = getCurrentlyPlayingAudioTrack(vid, p) || cat.audios[0];
+        return createAudioTrackObj(activeAudio, activeAudio);
       }
       const defLang = { id: 'und', name: 'Default', isDefault: true, getName: () => 'Default', getId: () => 'und' };
       return { id: 'und', xb: defLang, getLanguageInfo: () => defLang, captionTracks: [] };
@@ -580,20 +1310,37 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     // When the user clicks an audio track in the native "Faixa de áudio" menu:
     p.setAudioTrack = function (track) {
       if (!track) return;
-      const tid = String(track.id || (track.xb && (track.xb.id || (typeof track.xb.getId === 'function' && track.xb.getId()))) || '');
-      let numItag = parseInt(tid, 10);
       const vid = getCurrentVideoId();
       const cat = (vid && catalog[vid]) || null;
-      if (!numItag && cat && cat.audios) {
-        const trackName = (typeof track.getName === 'function' ? track.getName() : '') ||
-                          (typeof track.getLanguageInfo === 'function' && track.getLanguageInfo() && track.getLanguageInfo().getName()) ||
-                          (track.xb && typeof track.xb.getName === 'function' ? track.xb.getName() : '') ||
-                          (track.xb && track.xb.name) || '';
-        const match = cat.audios.find(a => a.displayName === trackName);
-        if (match) numItag = Number(match.itag);
+      if (!vid || !cat || !cat.audios || !cat.audios.length) return;
+
+      const rawId = String(
+        track.audioKey ||
+        track.id ||
+        (track.xb && (track.xb.id || (typeof track.xb.getId === 'function' && track.xb.getId()))) ||
+        ''
+      );
+      const trackName = (typeof track.getName === 'function' ? track.getName() : '') ||
+                        (typeof track.getLanguageInfo === 'function' && track.getLanguageInfo() && track.getLanguageInfo().getName()) ||
+                        (track.xb && typeof track.xb.getName === 'function' ? track.xb.getName() : '') ||
+                        (track.xb && track.xb.name) || '';
+
+      let chosen = cat.audios.find(a => (a.audioKey || getAudioKey(a)) === rawId);
+      if (!chosen && trackName) {
+        chosen = cat.audios.find(a => a.displayName === trackName);
       }
-      if (numItag && vid) {
-        setPin(vid, { audioItag: numItag });
+      if (!chosen) {
+        const numItag = parseInt(rawId, 10);
+        if (!isNaN(numItag)) {
+          chosen = cat.audios.find(a => Number(a.itag) === numItag);
+        }
+      }
+
+      if (chosen) {
+        setPin(vid, {
+          audioKey: chosen.audioKey || getAudioKey(chosen),
+          audioItag: Number(chosen.itag)
+        });
         reloadPlayerAtCurrentTime(vid);
         try {
           p.dispatchEvent(new CustomEvent('onPlaybackAudioChange'));
@@ -601,24 +1348,65 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       }
     };
 
-    // C. Force 5.1 Surround Sound capability flags on player
+    // C. Accurate 5.1 Surround & IAMF capability reporting on player (C01)
     p.hasSupportedAudio51Tracks = function () {
       const vid = getCurrentVideoId();
       const cat = (vid && catalog[vid]) || null;
       if (cat && cat.audios) {
         return cat.audios.some(a => (a.audioChannels || 2) >= 6);
       }
-      return true;
+      return false;
     };
     p.getUserAudio51Preference = function () {
       return 1;
     };
     p.isAudioIamf = function () {
-      return true;
+      return checkNativeIamfSupport();
     };
   }
 
-  setInterval(hookPlayerApi, 1000);
+  let lastAutoEnforcedVid = '';
+  let lastAutoEnforcedCount = 0;
+
+  function enforceInitialPreferredQuality() {
+    try {
+      const p = document.getElementById('ytlr-player__player-container-player');
+      if (!p || !p.__ttL1Hooked || typeof p.setPlaybackQualityRange !== 'function') return;
+      const vid = getCurrentVideoId();
+      if (!vid) return;
+      const cat = catalog[vid];
+      if (!cat || !cat.videos || !cat.videos.length) return;
+      const pin = getPin(vid);
+      if (pin && pin.manualVideo) return;
+      const prefs = getUserPreferences();
+      if ((!prefs.preferredVideoQuality || prefs.preferredVideoQuality === 'auto') &&
+          (!prefs.preferredVideoCodec || prefs.preferredVideoCodec === 'any')) {
+        return;
+      }
+      const best = selectBestVideoFormat(cat.videos, prefs.preferredVideoQuality, prefs.preferredVideoCodec);
+      if (!best) return;
+      if (vid !== lastAutoEnforcedVid) {
+        lastAutoEnforcedVid = vid;
+        lastAutoEnforcedCount = 0;
+      }
+      const stats = getActiveItagsFromStats(p);
+      if (stats.videoItag && Number(stats.videoItag) === Number(best.itag)) {
+        lastAutoEnforcedCount = 99;
+        return;
+      }
+      if (lastAutoEnforcedCount < 2) {
+        lastAutoEnforcedCount++;
+        const qKey = heightToQualityKey(best.height);
+        p.setPlaybackQualityRange(qKey, qKey, String(best.itag));
+      }
+    } catch (e) {}
+  }
+
+  window.__ttL1HookPlayerApi = hookPlayerApi;
+  setInterval(function () {
+    hookPlayerApi();
+    enforceInitialPreferredQuality();
+  }, 1000);
 })();
 )L1SCRIPT";
 

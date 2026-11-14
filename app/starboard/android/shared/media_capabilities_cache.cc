@@ -212,10 +212,11 @@ Range WidenHardware4kBitrateRange(Range range,
                                    bool is_software_decoder,
                                    const Range& supported_widths) {
   // MediaCodecInfo intersects codec bitrate-range with level limits (e.g.,
-  // AV1 Main Tier Level 5.1 caps at 40 Mbps even when HW decodes 80+ Mbps).
+  // AV1 Main Tier Level 5.1 caps at 40 Mbps even when HW decodes 100+ Mbps).
+  // Raise 4K hardware ceiling to 160 Mbps (High Tier Level 5.1 limit).
   if (!is_software_decoder && supported_widths.Contains(3840) &&
-      range.maximum > 0 && range.maximum < 100000000) {
-    range.maximum = 100000000;
+      range.maximum > 0 && range.maximum < 160000000) {
+    range.maximum = 160000000;
   }
   return range;
 }

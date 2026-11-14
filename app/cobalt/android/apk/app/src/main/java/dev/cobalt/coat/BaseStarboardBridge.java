@@ -1037,6 +1037,13 @@ public class BaseStarboardBridge {
 
   @CalledByNative
   protected boolean installAppFromURL(String url) {
+    if (url == null
+        || (!url.startsWith("https://github.com/HeliumMarcos/TubeRush/")
+            && !url.startsWith("https://objects.githubusercontent.com/")
+            && !url.startsWith("https://release-assets.githubusercontent.com/"))) {
+      Log.e(TAG, "Rejected untrusted update URL: " + url);
+      return false;
+    }
     java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor();
     android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     executor.execute(() -> {
@@ -1052,8 +1059,23 @@ public class BaseStarboardBridge {
           total += len;
         }
         out.flush();
-        success = true;
+        if (total > 1024 * 1024) {
+          PackageManager pm = mAppContext.getPackageManager();
+          android.content.pm.PackageInfo archiveInfo =
+              pm.getPackageArchiveInfo(
+                  apkFile.getAbsolutePath(), PackageManager.GET_SIGNATURES);
+          if (archiveInfo != null
+              && mAppContext.getPackageName().equals(archiveInfo.packageName)
+              && archiveInfo.signatures != null
+              && archiveInfo.signatures.length > 0) {
+            success = true;
+          } else {
+            Log.e(TAG, "Downloaded APK failed package/signature verification");
+            apkFile.delete();
+          }
+        }
       } catch (Exception e) {
+        Log.e(TAG, "Failed to download TubeRush update APK", e);
       }
       if (success) {
         mainHandler.post(() -> {
@@ -1072,9 +1094,9 @@ public class BaseStarboardBridge {
               mAppContext.startActivity(installIntent);
             }
           } catch (Exception e) {
+            Log.e(TAG, "Failed to launch APK installer", e);
           }
         });
-      } else {
       }
       executor.shutdown();
     });
@@ -1100,7 +1122,10 @@ public class BaseStarboardBridge {
 
   @CalledByNative
   protected String getArchitecture() {
-    return Build.SUPPORTED_ABIS[0];
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      return android.os.Process.is64Bit() ? "arm64-v8a" : "armeabi-v7a";
+    }
+    return Build.CPU_ABI != null ? Build.CPU_ABI : Build.SUPPORTED_ABIS[0];
   }
 
   @CalledByNative

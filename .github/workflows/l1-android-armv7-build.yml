@@ -4,11 +4,10 @@ on:
   push:
     branches:
       - main
-      - refactor/seven-entry-root
-      - upgrade/cobalt-27-lts-11
     paths:
       - '.github/workflows/l1-android-armv7-build.yml'
       - '.github/scripts/tuberush-ci-cobalt-source.sh'
+      - '.github/scripts/l1_media_ui_script_test.js'
       - 'app/.gn'
       - 'app/DEPS'
       - 'app/.gitmodules'
@@ -25,6 +24,7 @@ on:
     paths:
       - '.github/workflows/l1-android-armv7-build.yml'
       - '.github/scripts/tuberush-ci-cobalt-source.sh'
+      - '.github/scripts/l1_media_ui_script_test.js'
       - 'app/.gn'
       - 'app/DEPS'
       - 'app/.gitmodules'
@@ -76,6 +76,12 @@ jobs:
             cobalt/android/apk/app/src/main/java/dev/cobalt/media
             third_party/blink/renderer/core/dom/document.cc
             .github/config/android-arm.json
+            .github/scripts/l1_media_ui_script_test.js
+      - name: Run L1 Media UI unit test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/scripts/l1_media_ui_script_test.js
       - name: Verify ARMv7 APK target and source wiring (not a compilation)
         shell: bash
         run: |
@@ -299,8 +305,9 @@ jobs:
             exit 1
           fi
           mkdir -p "$GITHUB_WORKSPACE/build-artifacts"
+          cp "$apk" "$GITHUB_WORKSPACE/build-artifacts/TubeRush-armv7.apk"
           cp "$apk" "$GITHUB_WORKSPACE/build-artifacts/TubeRush-armv7-test.apk"
-          sha256sum "$GITHUB_WORKSPACE/build-artifacts/TubeRush-armv7-test.apk" | tee "$GITHUB_WORKSPACE/build-artifacts/SHA256SUMS.txt"
+          sha256sum "$GITHUB_WORKSPACE/build-artifacts/TubeRush-armv7.apk" "$GITHUB_WORKSPACE/build-artifacts/TubeRush-armv7-test.apk" | tee "$GITHUB_WORKSPACE/build-artifacts/SHA256SUMS.txt"
           printf 'TubeRush source commit: %s\nEngine commit: %s\nPlatform: android-arm\nGN target: //cobalt/android:cobalt_apk\nSource: %s\n' "$GITHUB_SHA" "$(cat "$GITHUB_WORKSPACE/cobalt/engine-build-revision.txt")" "$apk" > "$GITHUB_WORKSPACE/build-artifacts/BUILD-INFO.txt"
 
       - name: Upload test APK (no GitHub Release)

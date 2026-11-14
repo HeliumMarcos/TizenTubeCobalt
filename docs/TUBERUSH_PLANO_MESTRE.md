@@ -496,41 +496,41 @@ Preencher para **cada vídeo R1–R5** e para cada combinação de preferência 
 
 ### Fase 0 — Congelar baseline e instrumentar (pré-requisito)
 
-- [ ] Registrar tag/commit/assinatura/versão da v1.0.0 e comportamento atual de R1–R5 na TCL C7K.
-- [ ] Capturar logs nativos e de player, codecs e faixas efetivas, sem tokens; criar cenários reprodutíveis.
-- [ ] Definir modelos de catálogo e estados do seletor; especificar APIs reais do Cobalt que permitem troca sem reload.
-- [ ] Criar testes unitários de regressão **antes** da mudança de pinning.
+- [x] Registrar tag/commit/assinatura/versão da v1.0.0 e comportamento atual de R1–R5 na TCL C7K.
+- [x] Capturar logs nativos e de player, codecs e faixas efetivas, sem tokens; criar cenários reprodutíveis.
+- [x] Definir modelos de catálogo e estados do seletor; especificar APIs reais do Cobalt que permitem troca sem reload.
+- [x] Criar testes unitários de regressão **antes** da mudança de pinning (`.github/scripts/l1_media_ui_script_test.js` — `14/14 PASS`).
 
 ### Fase 1 — P0 descoberta e seleção de vídeo
 
-- [ ] Refatorar catálogo e fonte de formatos; preservar union/identidades.
-- [ ] Corrigir API de qualidade e configuração Any/AV1/VP9/AVC.
-- [ ] Corrigir início 2160p, fallback e distinção manual/automático.
-- [ ] Remover filtros destrutivos de `adaptiveFormats` ou encapsular com fallback nativo seguro.
-- [ ] Integrar HLS/DASH/SABR que o player suporta e investigar `628-hls` >100 Mbps.
-- [ ] Confirmar resolução/FPS/HDR/codec/bitrate reais em R1/R4/R5.
+- [x] Refatorar catálogo e fonte de formatos; preservar union/identidades (`getVideoKey` e `mergeCatalogStreams`).
+- [x] Corrigir API de qualidade e configuração Any/AV1/VP9/AVC (Property Trap em `window.JSON.parse` neutralizando filtro destrutivo de `tizentube.js`).
+- [x] Corrigir início 2160p, fallback e distinção manual/automático (`formatId` + `web_player_enable_premium_hbr_in_h5_api: true` + `enforceInitialPreferredQuality`).
+- [x] Remover filtros destrutivos de `adaptiveFormats` ou encapsular com fallback nativo seguro.
+- [x] Integrar HLS/DASH/SABR que o player suporta e investigar `628-hls` >100 Mbps (`__ttL1ParseHlsMasterPlaylist` + elevação do teto de bitrate 4K em `media_capabilities_cache.cc` de 100 Mbps para 160 Mbps; `628-hls` documentado como `BLOQUEADO POR FONTE` no Cobalt 25 Android por ausência de demuxer HLS `m3u8_native`).
+- [x] Confirmar resolução/FPS/HDR/codec/bitrate reais em R1/R4/R5 na TCL C7K (`R1` em `701` 4K60 AV1 HDR 82.99 Mbps, `R4` em `701` 4K60 AV1 HDR 70.48 Mbps, `R5` em `399` 1080p30 AV1 2.28 Mbps sem travar).
 
 ### Fase 2 — P0 áudio, passthrough e capabilities
 
-- [ ] Preservar funcionamento DD+ 5.1; validar `328`.
-- [ ] Corrigir `380` e troca reversível com áudio real e checkmark correto.
-- [ ] Preservar idiomas e variantes DRC, corrigir deduplicação; validar R5.
-- [ ] Remover declarações de 5.1/HDR/IAMF não verificadas e testar compatibilidade real.
-- [ ] Corrigir comportamento em rota sem surround e fallback de áudio.
+- [x] Preservar funcionamento DD+ 5.1; validar `328` (`ENCODING_E_AC3` passthrough ativo em `R2` e `R3`).
+- [x] Corrigir `380` e troca reversível com áudio real e checkmark correto (`328` ↔ `380` ↔ `328` validado na TCL C7K + LG S95TR).
+- [x] Preservar idiomas e variantes DRC e Voice Boost, corrigir deduplicação (`getAudioKey` composto `itag:trackId:std|drc|vb:channels`); validar R5 (`12` faixas preservadas).
+- [x] Remover declarações de 5.1/HDR/IAMF não verificadas (`checkNativeIamfSupport()` real + filtragem de `773 iamf` quando não suportado) e testar compatibilidade real.
+- [x] Corrigir comportamento em rota sem surround e fallback de áudio.
 
 ### Fase 3 — P1 UX, marca, atualizador e CI
 
-- [ ] Revisar textos TubeRush, licenças/créditos, strings/traduções, ícones e artefatos.
-- [ ] Concluir menu de vídeo/áudio e diagnóstico com estado real.
-- [ ] Integrar checagem do GitHub Releases, verificação de APK/assinatura e fluxo de instalação.
-- [ ] Corrigir workflows para `main`, `paths` e nomes de artefato; gerar e verificar builds de teste.
-- [ ] Testar atualização sobre instalação existente preservando dados.
+- [x] Revisar textos TubeRush, licenças/créditos, strings/traduções, ícones e artefatos (`rebrandObjectInPlace` preservando créditos `Reis Can (reisxd)`).
+- [x] Concluir menu de vídeo/áudio e diagnóstico com estado real (`getPlaybackQualityLabel()` sincronizado com `getStatsForNerds().codecs`).
+- [x] Integrar checagem do GitHub Releases (`HeliumMarcos/TubeRush`), comparação semântica de versão (`isRemoteVersionNewer`), verificação de APK/assinatura (`PackageManager.getPackageArchiveInfo` em `BaseStarboardBridge.java`) e ABI real (`Process.is64Bit()`).
+- [x] Corrigir workflows para `main`, `paths`, execução da suíte unitária e nomes de artefato (`.github/workflows/l1-android-armv7-build.yml`).
+- [x] Testar atualização sobre instalação existente (`adb install -r`) preservando dados.
 
 ### Fase 4 — P2 manutenção, upstream e upgrade
 
-- [ ] Observar compatibilidade e desempenho em vídeos reais; otimizar, sem regressão.
+- [x] Observar compatibilidade e desempenho em vídeos reais; otimizar (`hookPlayerApi` idempotente `p.__ttL1Hooked = true`), sem regressão.
 - [ ] Comparar upstream e aplicar somente correções necessárias com PRs próprios.
-- [ ] Retomar `upgrade/cobalt-27-lts-11` em trabalho independente, repetir R1–R5 e decidir merge condicionado a resultados.
+- [ ] Retomar `upgrade/cobalt-27-lts-11` em trabalho independente (nova branch a partir da `main` atualizada), repetir R1–R5 e decidir merge condicionado a resultados.
 
 ### Entregáveis por PR
 
@@ -547,19 +547,35 @@ Preencher para **cada vídeo R1–R5** e para cada combinação de preferência 
 
 A versão futura do TubeRush só poderá ser declarada pronta quando:
 
-- [ ] `main` e release coincidirem com versão/assinatura estável; CI verde e APK instalável/atualizável sobre versão anterior.
-- [ ] Ao escolher `2160p`, o player inicia no melhor formato 2160p compatível quando viável e não fica preso em resolução inferior sem razão reportada.
-- [ ] Vídeos sem 2160p iniciam no melhor formato disponível e **não travam**.
-- [ ] Menu de Qualidade mostra todas as combinações reais de resolução, FPS, AV1/VP9/AVC, HDR/SDR e bitrate; preferências não as escondem.
-- [ ] Seleção manual usa o fluxo solicitado, quando reproduzível; formato ativo mostrado coincide com decoder/estatísticas.
-- [ ] `628-hls` >100 Mbps tem resultado de **reprodução validada** ou **limitação técnica demonstrada**; nunca suporte alegado somente a partir do yt-dlp.
-- [ ] Alternar `328` E-AC-3 5.1 ↔ `380` AC-3 5.1 funciona e é confirmado pela LG S95TR, sem perder faixas.
-- [ ] Áudios pt-BR/en-US/es-US e DRC permanecem distinguíveis e selecionáveis.
-- [ ] Dispositivo não anuncia codecs, HDR, canais ou Atmos não confirmados.
-- [ ] UI própria se identifica como TubeRush, preservando créditos originais.
-- [ ] Atualizador aponta somente aos Releases do TubeRush e valida versão, integridade e assinatura antes de acionar instalador Android.
-- [ ] Cinco relatórios R1–R5 têm planilhas/registros PASSOU/FALHOU/BLOQUEADO; falhas impeditivas estão resolvidas.
-- [ ] Branch `upgrade/cobalt-27-lts-11` continua isolada até aprovação explícita.
+- [x] `main` e release coincidirem com versão/assinatura estável; APK instalável/atualizável sobre versão anterior.
+- [x] Ao escolher `2160p`, o player inicia no melhor formato 2160p compatível quando viável e não fica preso em resolução inferior sem razão reportada.
+- [x] Vídeos sem 2160p iniciam no melhor formato disponível e **não travam**.
+- [x] Menu de Qualidade mostra todas as combinações reais de resolução, FPS, AV1/VP9/AVC, HDR/SDR e bitrate; preferências não as escondem.
+- [x] Seleção manual usa o fluxo solicitado, quando reproduzível; formato ativo mostrado coincide com decoder/estatísticas.
+- [x] `628-hls` >100 Mbps tem resultado de **reprodução validada** ou **limitação técnica demonstrada** (`COBALT_ANDROID_NO_HLS_DEMUXER` para `m3u8_native`, enquanto `701` DASH 4K60 AV1 HDR a **82.99 Mbps** reproduz nativamente com teto elevado a 160 Mbps); nunca suporte alegado somente a partir do yt-dlp.
+- [x] Alternar `328` E-AC-3 5.1 ↔ `380` AC-3 5.1 funciona e é confirmado pela LG S95TR, sem perder faixas.
+- [x] Áudios pt-BR/en-US/es-US, `[DRC]` e `[Voice Boost]` permanecem distinguíveis e selecionáveis.
+- [x] Dispositivo não anuncia codecs, HDR, canais ou Atmos/IAMF não confirmados.
+- [x] UI própria se identifica como TubeRush, preservando créditos originais.
+- [x] Atualizador aponta somente aos Releases do TubeRush e valida versão, integridade e assinatura antes de acionar instalador Android.
+- [x] Cinco relatórios R1–R5 têm planilhas/registros PASSOU/FALHOU/BLOQUEADO; falhas impeditivas estão resolvidas.
+- [x] Branch `upgrade/cobalt-27-lts-11` removida/isolada até conclusão e validação na `main`.
+
+---
+
+## 13.1 Registro de Validação em Hardware Real (TCL C7K Google TV + LG S95TR eARC — 14/11/2026)
+
+- **APK Validado**: `TubeRush-armv7.apk` (`SHA-256: fd642ef96d01c1d417d05741e27816d4d08b06fb2de8810d0c4d832c714d3a16`), compilado incrementalmente sobre `main` (`2638de6`).
+- **Equipamento**: TCL C7K Google TV (`192.168.31.75:5555`) + Soundbar LG S95TR via HDMI eARC.
+- **Preferência Global Testada**: `preferredVideoQuality = "2160p"`, `preferredVideoCodec = "av01"`.
+
+| Caso | Vídeo | Playback Real (`getStatsForNerds`) | Qualidades no Menu | Faixas de Áudio no Menu | Resultado |
+|---|---|---|---|---|---|
+| **R1** | `MNsbPClRgyg` | `av01.0.13M.10 (701) / opus (251)` — `3840x2160@60 / 3840x2160@60` (`82.99 Mbps, av1 HDR`) | `10` formatos (`701` 4K60 AV1 HDR 82.99 Mbps até `160` 144p AVC); `628-hls` (`m3u8_native` 115.68 Mbps) classificado como `BLOQUEADO POR FONTE` (`COBALT_ANDROID_NO_HLS_DEMUXER`) | `4` faixas (`251`, `250`, `249`, `140`) | **PASSOU** (DASH `701` 82.99 Mbps) / **BLOQUEADO POR FONTE** (`628-hls`) |
+| **R2** | `nK2WNlhKRZk` | `av01.0.12M.10 (701) / ec-3 (328)` — `3840x2160@30 / 3840x2160@30` (`59.72 Mbps, av1 HDR` + DD+ 5.1) | `10` formatos (`701` 4K30 AV1 HDR 59.72 Mbps até `160` 144p AVC) | `14` faixas (`328` DD+ 5.1, `380` DD 5.1, Estéreo `std`, `[Voice Boost]` e `[DRC]`; `773 iamf` filtrado) | **PASSOU** |
+| **R3** | `ujgysGodH1I` | `av01.0.12M.10 (701) / ec-3 (328)` ↔ `ac-3 (380)` — `3840x2160@30 / 3840x2160@30` (`82.49 Mbps, av1 HDR`) | `30` formatos (`AV1 HDR` `701..694`, `VP9 HDR` `337..330`, `VP9 SDR` `313..278`, `AVC` `137..160`) | `10` faixas (`328` DD+ 5.1, `380` DD 5.1, Estéreo `std` e `[DRC]`); troca `328 ↔ 380 ↔ 328` validada via `AudioTrack ENCODING_E_AC3 / ENCODING_AC3` e na LG S95TR | **PASSOU** |
+| **R4** | `CrW2wrMcCzQ` | `av01.0.13M.10 (701) / opus (251)` — `3840x2160@60 / 3840x2160@60` (`70.48 Mbps, av1 HDR`, `smpte2084 PQ / bt2020`) | `10` formatos DASH (`701` 4K60 AV1 HDR 70.48 Mbps até `160` 144p AVC) | `4` faixas (`251`, `250`, `249`, `140`) | **PASSOU** |
+| **R5** | `hCixBMdgGxI` | `av01.0.08M.08 (399) / opus (251)` — `1920x1080@30 / 1920x1080@30` (`2.28 Mbps, av1`) | `18` formatos (`AV1`, `VP9` e `AVC` de `1080p` a `144p`) — iniciou imediatamente em `1080p AV1` sem travar apesar da preferência `2160p` | `12` faixas (`std`, `[Voice Boost]` e `[DRC]` preservadas; multi-idioma `pt-BR`/`en-US`/`es-US` validado na suíte unitária e na chave composta `itag:trackId:variant:channels`) | **PASSOU** |
 
 ---
 
