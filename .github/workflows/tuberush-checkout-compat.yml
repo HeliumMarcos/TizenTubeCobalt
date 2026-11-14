@@ -1,0 +1,96 @@
+name: TubeRush Cobalt checkout compatibility
+
+on:
+  push:
+    branches:
+      - refactor/seven-entry-root
+    paths:
+      - '.github/workflows/tuberush-checkout-compat.yml'
+      - '.github/workflows/l1-android-armv7-build.yml'
+      - '.github/scripts/tuberush-ci-cobalt-source.sh'
+      - 'app/DEPS'
+      - 'app/.gn'
+      - 'app/.gitmodules'
+      - '.gitmodules'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github
+            .gitmodules
+            app/.gn
+            app/DEPS
+            app/.gitmodules
+            app/cobalt/build/gn.py
+
+      - name: Verify seven-entry repository and engine Git tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-tree --name-only HEAD | tee /tmp/tuberush-root.txt
+          test "$(wc -l </tmp/tuberush-root.txt)" -eq 7
+          for x in .github .gitignore .gitmodules AGENTS.md README.md app docs; do
+            grep -Fxq "$x" /tmp/tuberush-root.txt
+          done
+          git cat-file -e 'HEAD:.gitmodules'
+          git cat-file -e 'HEAD:app/.gitattributes'
+          git cat-file -e 'HEAD:app/.gn'
+          git cat-file -e 'HEAD:app/DEPS'
+          git cat-file -e 'HEAD:app/.gitmodules'
+          git cat-file -e 'HEAD:app/cobalt/build/gn.py'
+          git cat-file -e 'HEAD:app/third_party/blink/renderer/core/dom/document.cc'
+          git cat-file -e 'HEAD:app/starboard/android/shared/BUILD.gn'
+          echo 'Seven root entries and Cobalt dependency tree verified.'
+
+      - name: Simulate a complete layout conversion with a tiny fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n .github/scripts/tuberush-ci-cobalt-source.sh
+          testroot="$(mktemp -d)"
+          trap 'rm -rf "$testroot"' EXIT
+          git -C "$testroot" init -q
+          git -C "$testroot" config user.name 'CI Fixture'
+          git -C "$testroot" config user.email 'fixture@example.invalid'
+          mkdir -p "$testroot/app/cobalt/build" "$testroot/app/starboard/android/shared" \
+            "$testroot/app/third_party/blink/renderer/core/dom" "$testroot/.github" "$testroot/docs"
+          printf 'fixture\n' >"$testroot/app/.gn"
+          printf 'fixture\n' >"$testroot/app/DEPS"
+          printf 'fixture\n' >"$testroot/app/.gitmodules"
+          printf 'fixture\n' >"$testroot/app/cobalt/BUILD.gn"
+          printf 'fixture\n' >"$testroot/app/cobalt/build/gn.py"
+          printf 'fixture\n' >"$testroot/app/cobalt/version.h"
+          printf 'fixture\n' >"$testroot/app/starboard/android/shared/BUILD.gn"
+          printf 'fixture\n' >"$testroot/app/third_party/blink/renderer/core/dom/document.cc"
+          for x in .gitattributes .gitignore AGENTS.md README.md; do
+            printf 'fixture\n' >"$testroot/$x"
+          done
+          printf 'fixture\n' >"$testroot/docs/readme.md"
+          printf 'fixture\n' >"$testroot/.github/test.txt"
+          git -C "$testroot" add -A
+          git -C "$testroot" commit -qm 'Synthetic TubeRush tree'
+          expected_tree="$(git -C "$testroot" rev-parse HEAD:app)"
+          expected_docs="$(git -C "$testroot" rev-parse HEAD:docs)"
+          bash .github/scripts/tuberush-ci-cobalt-source.sh "$testroot"
+          test -f "$testroot/DEPS"
+          test -f "$testroot/.gn"
+          test -f "$testroot/.gitmodules"
+          test -f "$testroot/cobalt/build/gn.py"
+          test -f "$testroot/starboard/android/shared/BUILD.gn"
+          test ! -e "$testroot/app/.gn"
+          test "$(git -C "$testroot" rev-parse HEAD:cobalt)" = "$(git -C "$testroot" rev-parse "$expected_tree:cobalt")"
+          test "$(git -C "$testroot" rev-parse HEAD:docs)" = "$expected_docs"
+          test "$(git -C "$testroot" ls-tree --name-only HEAD | wc -l)" -ge 1
+          echo 'Synthetic GN/gclient source-root preparation PASS.'
