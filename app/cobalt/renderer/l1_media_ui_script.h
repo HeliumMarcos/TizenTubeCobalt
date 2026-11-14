@@ -21,8 +21,8 @@ namespace cobalt {
 // cannot block it. Unlocks 4K/HDR & 5.1/Stereo audio, formats each video stream
 // in the native YouTube TV "Qualidade" menu with resolution, FPS, bitrate and codec
 // (SmartTube style: "2160p, 60fps, 82.49Mbps, av1 HDR", "2160p, 60fps, 44.16Mbps, vp9"),
-// preserves full video/audio catalogs across codec/resolution preferences, and lists
-// all available audio streams (Dolby Digital Plus ec-3 5.1, Dolby Digital ac-3 5.1,
+// preserves full video/audio catalogs across codec/resolution preferences (AV1, VP9, AVC),
+// and lists all available audio streams (Dolby Digital Plus ec-3 5.1, Dolby Digital ac-3 5.1,
 // multi-language tracks, DRC variants, Stereo) in the native "Faixa de áudio" menu.
 inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
 (function () {
@@ -33,6 +33,7 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
   const SESSION_RESUME_PREFIX = 'ttL1Resume_';
   const YTAF_CONFIG_KEY = 'ytaf-configuration';
   const TUBERUSH_RELEASES_API = 'https://api.github.com/repos/HeliumMarcos/TubeRush/releases/latest';
+  const nativeJsonParse = window.JSON.parse.bind(window.JSON);
 
   // 1. Force 4K viewport so YouTube TV serves 4K 2160p assets and formats.
   try {
@@ -67,12 +68,16 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     }
   } catch (e) {}
 
+  let cachedIamfSupport = null;
   function checkNativeIamfSupport() {
+    if (cachedIamfSupport !== null) return cachedIamfSupport;
     try {
       if (origIsTypeSupported) {
-        return !!origIsTypeSupported('audio/mp4; codecs="iamf.001.001.opus"');
+        cachedIamfSupport = !!origIsTypeSupported('audio/mp4; codecs="iamf.001.001.opus"');
+        return cachedIamfSupport;
       }
     } catch (e) {}
+    cachedIamfSupport = false;
     return false;
   }
 
@@ -212,7 +217,10 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
   } catch (e) {}
 
   // 7. Inject 5.1 Surround Sound & HBR format-id experiment flags into YouTube TV config
+  let expFlagsTicks = 0;
+  let expFlagsTimer = null;
   function applyExperimentFlags() {
+    expFlagsTicks++;
     try {
       if (window.ytcfg && window.ytcfg.get) {
         const exp = window.ytcfg.get('EXPERIMENT_FLAGS') || {};
@@ -232,11 +240,38 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         if (typeof window.ytcfg.set === 'function') {
           window.ytcfg.set({ EXPERIMENT_FLAGS: exp });
         }
+        // Also patch WEB_PLAYER_CONTEXT_CONFIGS.serializedExperimentFlags so player.js bXa
+        // has web_player_enable_premium_hbr_in_h5_api=true from initialization!
+        const ctxs = window.ytcfg.get('WEB_PLAYER_CONTEXT_CONFIGS');
+        if (ctxs && typeof ctxs === 'object') {
+          const extraFlags =
+            '&web_player_enable_premium_hbr_in_h5_api=true' +
+            '&html5_enable_5_1_audio=true' +
+            '&html5_prefer_5_1_audio=true' +
+            '&html5_honor_user_51_preference=true' +
+            '&html5_enable_eac3=true' +
+            '&html5_enable_ac3=true';
+          for (const k of Object.keys(ctxs)) {
+            const c = ctxs[k];
+            if (c && typeof c.serializedExperimentFlags === 'string' &&
+                !c.serializedExperimentFlags.includes('web_player_enable_premium_hbr_in_h5_api=true')) {
+              c.serializedExperimentFlags += extraFlags;
+            }
+          }
+          if (expFlagsTicks >= 4 && expFlagsTimer) {
+            clearInterval(expFlagsTimer);
+            expFlagsTimer = null;
+          }
+        }
       }
     } catch (e) {}
+    if (expFlagsTicks >= 15 && expFlagsTimer) {
+      clearInterval(expFlagsTimer);
+      expFlagsTimer = null;
+    }
   }
   applyExperimentFlags();
-  setInterval(applyExperimentFlags, 2000);
+  expFlagsTimer = setInterval(applyExperimentFlags, 1000);
 
   // 8. User Preferences helper (reads TizenTube / TubeRush localStorage settings)
   function getUserPreferences() {
@@ -362,6 +397,7 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     return true;
   }
 
+  // Codec priority: AV1 (3, best) -> VP9 (2, intermediate) -> AVC (1, compatibility)
   function defaultCodecRank(mime) {
     const fam = detectVideoCodecFamily(mime);
     if (fam === 'av01') return 3;
@@ -437,18 +473,20 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     return Array.from(map.values());
   }
 
+  // Sort catalog videos: highest height first, then AV1 -> VP9 -> AVC, then HDR, then FPS, then bitrate
   function sortCatalogVideos(list) {
     return list.slice().sort((a, b) => {
       const hDiff = Number(b.height || 0) - Number(a.height || 0);
       if (hDiff !== 0) return hDiff;
-      const fpsDiff = Number(b.fps || 30) - Number(a.fps || 30);
-      if (fpsDiff !== 0) return fpsDiff;
+      const rankDiff = defaultCodecRank(b.mimeType) - defaultCodecRank(a.mimeType);
+      if (rankDiff !== 0) return rankDiff;
       const hdrDiff = (isHdrFormat(b) ? 1 : 0) - (isHdrFormat(a) ? 1 : 0);
       if (hdrDiff !== 0) return hdrDiff;
+      const fpsDiff = Number(b.fps || 30) - Number(a.fps || 30);
+      if (fpsDiff !== 0) return fpsDiff;
       const brA = Number(a.bitrate || a.averageBitrate || 0);
       const brB = Number(b.bitrate || b.averageBitrate || 0);
-      if (brB !== brA) return brB - brA;
-      return defaultCodecRank(b.mimeType) - defaultCodecRank(a.mimeType);
+      return brB - brA;
     });
   }
 
@@ -469,7 +507,6 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     return list.slice().sort((a, b) => {
       const metaA = extractAudioMetadata(a);
       const metaB = extractAudioMetadata(b);
-      // 5.1 surround tracks always surface at top, prioritizing default language when multi-language 5.1 exists
       const chA = Number(a.audioChannels || 2) >= 6 ? 1 : 0;
       const chB = Number(b.audioChannels || 2) >= 6 ? 1 : 0;
       if (chA !== chB) return chB - chA;
@@ -500,7 +537,6 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     const desired = qualityKeyToHeight(pref) || parseInt(pref, 10) || 0;
     if (!desired) return heights[0];
     if (heights.includes(desired)) return desired;
-    // Fallback ladder: highest available resolution <= desired, else lowest available
     const lowerOrEqual = heights.find(h => h <= desired);
     return lowerOrEqual !== undefined ? lowerOrEqual : heights[heights.length - 1];
   }
@@ -515,12 +551,12 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       const matchA = codecMatchesPreference(a.mimeType, preferredCodecStr) ? 1 : 0;
       const matchB = codecMatchesPreference(b.mimeType, preferredCodecStr) ? 1 : 0;
       if (matchA !== matchB) return matchB - matchA;
+      const rankDiff = defaultCodecRank(b.mimeType) - defaultCodecRank(a.mimeType);
+      if (rankDiff !== 0) return rankDiff;
       const hdrDiff = (isHdrFormat(b) ? 1 : 0) - (isHdrFormat(a) ? 1 : 0);
       if (hdrDiff !== 0) return hdrDiff;
       const fpsDiff = Number(b.fps || 30) - Number(a.fps || 30);
       if (fpsDiff !== 0) return fpsDiff;
-      const rankDiff = defaultCodecRank(b.mimeType) - defaultCodecRank(a.mimeType);
-      if (rankDiff !== 0) return rankDiff;
       return Number(b.bitrate || b.averageBitrate || 0) - Number(a.bitrate || a.averageBitrate || 0);
     });
     return sorted[0] || null;
@@ -550,6 +586,8 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       if (matchCodecA !== matchCodecB) return matchCodecB - matchCodecA;
       const hDiff = Number(b.height || 0) - Number(a.height || 0);
       if (hDiff !== 0) return hDiff;
+      const rankDiff = defaultCodecRank(b.mimeType) - defaultCodecRank(a.mimeType);
+      if (rankDiff !== 0) return rankDiff;
       const hdrDiff = (isHdrFormat(b) ? 1 : 0) - (isHdrFormat(a) ? 1 : 0);
       if (hdrDiff !== 0) return hdrDiff;
       const fpsDiff = Number(b.fps || 30) - Number(a.fps || 30);
@@ -691,6 +729,24 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       : rawVids;
     const vids = sortVideosForPlayback(fullVids, pin, prefs);
 
+    // Pre-seed player.js's yt-player-quality in localStorage BEFORE MediaSource creation
+    // so player.js (FU()) starts directly at the target resolution on frame 0 without
+    // starting at 1080p and flushing the decoder 500ms into playback!
+    try {
+      if (vids.length && window.localStorage) {
+        const initialFmt = vids[0];
+        const targetH = Number(initialFmt && initialFmt.height) || 2160;
+        const now = Date.now();
+        window.localStorage.setItem('yt-player-quality', JSON.stringify({
+          data: JSON.stringify({ quality: targetH, previousQuality: targetH }),
+          expiration: now + 31104000000,
+          creation: now
+        }));
+        window.localStorage.removeItem('yt-player-performance-cap');
+        window.localStorage.removeItem('yt-player-performance-cap-active-set');
+      }
+    } catch (e) {}
+
     let auds = (vid && catalog[vid] && catalog[vid].audios.length >= rawAuds.length)
       ? catalog[vid].audios.slice()
       : sortCatalogAudios(rawAuds);
@@ -714,15 +770,153 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     return obj;
   }
 
-  // 10. TubeRush UI Rebranding (preserves original author credits: Reis Can / reisxd)
+  // 10. TubeRush UI Rebranding & Portuguese (pt-BR) Localization
+  // (preserves original author credits: Reis Can / reisxd)
+  const PT_BR_DICT = {
+    'TubeRush Settings': 'Configurações do TubeRush',
+    'Open TubeRush Settings': 'Abrir Configurações do TubeRush',
+    'Made by Reis Can (reisxd) with ❤️': 'Feito por Reis Can (reisxd) com ❤️',
+    'Social Media Links': 'Redes Sociais',
+    'Ad Block': 'Bloqueador de Anúncios',
+    'SponsorBlock Settings': 'Configurações do SponsorBlock',
+    'Enable SponsorBlock': 'Ativar SponsorBlock',
+    'Manual SponsorBlock Segment Skip': 'Pular Segmentos do SponsorBlock Manualmente',
+    'Segments': 'Segmentos',
+    'Skip Sponsor Segments': 'Pular Segmentos Patrocinados',
+    'Skip Intro Segments': 'Pular Segmentos de Introdução',
+    'Skip Outro Segments': 'Pular Segmentos de Encerramento',
+    'Skip Interaction Reminder Segments': 'Pular Segmentos de Lembrete de Interação',
+    'Skip Self-Promotion Segments': 'Pular Segmentos de Autopromoção',
+    'Skip Preview/Recap Segments': 'Pular Segmentos de Pré-visualização/Resumo',
+    'Skip Tangents/Jokes': 'Pular Assuntos Paralelos/Piadas',
+    'Skip Non-Music Segments': 'Pular Segmentos Não Musicais',
+    'Enable Highlights': 'Ativar Destaques',
+    'Show SponsorBlock Toasts': 'Mostrar Avisos do SponsorBlock',
+    'DeArrow Settings': 'Configurações do DeArrow',
+    'Enable DeArrow': 'Ativar DeArrow',
+    'Enable DeArrow Thumbnails': 'Ativar Miniaturas do DeArrow',
+    'Miscellaneous Settings': 'Configurações Diversas',
+    'Hide End Screen Cards': 'Ocultar Cards no Final do Vídeo',
+    "Enable 'Are You Still There?' Renderer": "Ativar Aviso de 'Você ainda está assistindo?'",
+    "Enable 'Includes Paid Promotion' Overlay": "Ativar Sobreposição de 'Contém promoção paga'",
+    "Who's Watching Menu": "Menu 'Quem está assistindo?'",
+    "Enable Who's Watching Menu": "Ativar Menu 'Quem está assistindo?'",
+    "Permanently Enable Who's Watching Menu": "Ativar Menu 'Quem está assistindo?' Permanentemente",
+    "Enable Who's Watching Menu on App Exit": "Ativar Menu 'Quem está assistindo?' ao Sair do App",
+    'Fix UI': 'Corrigir Interface',
+    'Enable High Quality Thumbnails': 'Ativar Miniaturas de Alta Qualidade',
+    'Enable Long Press Actions': 'Ativar Ações de Toque Longo',
+    'Enable Shorts': 'Ativar Shorts',
+    'Enable Video Previews': 'Ativar Pré-visualizações de Vídeo',
+    'Show TT Welcome Message': 'Mostrar Mensagem de Boas-vindas do TubeRush',
+    'Show Guest Sign-In Reminder': 'Mostrar Lembrete de Login para Convidados',
+    'Reload Home on Startup': 'Recarregar a Página Inicial na Inicialização',
+    'Subtitle Settings': 'Configurações das Legendas',
+    'Show Local Subtitles': 'Mostrar Legendas Locais',
+    'Show Hidden Subtitles': 'Mostrar Legendas Ocultas',
+    'Remember Caption Style': 'Lembrar Estilo da Legenda',
+    'Video Player Settings': 'Configurações do Reprodutor de Vídeo',
+    'Customize video player features': 'Personalizar recursos do reprodutor de vídeo',
+    'Patch Video Player UI': 'Corrigir Interface do Reprodutor de Vídeo',
+    'Enable Video Player UI Patching': 'Ativar Correção da Interface do Reprodutor de Vídeo',
+    'Enable Previous/Next Buttons': 'Ativar Botões de Avançar/Retroceder',
+    'Show Super Thanks Button': 'Mostrar Botão de Valeu Demais',
+    'Show Speed Control Button': 'Mostrar Botão de Controle de Velocidade',
+    'Show Ask Button': 'Mostrar Botão Perguntar (IA)',
+    'Show Mini Player Button': 'Mostrar Botão de Miniatura',
+    'Swap Mini Player Button with PiP Button': 'Trocar Botão de Miniatura pelo PiP',
+    'Preferred Video Quality': 'Qualidade de Vídeo Preferida',
+    'Choose your preferred or closest available video quality to start playback with': 'Escolha a qualidade de vídeo preferida ou a mais próxima disponível ao iniciar a reprodução',
+    'Speed Setting Intervals': 'Intervalos do Ajuste de Velocidade',
+    'Set the speed increments for adjusting video playback speed': 'Defina os incrementos de velocidade para ajustar a velocidade de reprodução do vídeo',
+    'Preferred Video Codec': 'Codificação de Vídeo Preferida',
+    'Choose your preferred video codec for playback': 'Escolha a codificação de vídeo preferida para reprodução',
+    'Auto Frame Rate': 'Taxa de Quadros Automática (AFR)',
+    'Auto Frame Rate Pause Duration': 'Duração da Pausa da Taxa de Quadros Automática',
+    'Set the duration (in seconds) to pause video playback when adjusting frame rate': 'Defina a duração (em segundos) da pausa na reprodução do vídeo ao ajustar a taxa de quadros',
+    'Any': 'Qualquer',
+    'Auto': 'Automática',
+    'Hide Related Videos': 'Ocultar Vídeos Relacionados',
+    'User Interface Settings': 'Configurações da Interface de Usuário',
+    'Customize the interface to your liking': 'Personalize a interface ao seu gosto',
+    'Hide Watched Videos': 'Ocultar Vídeos Assistidos',
+    'Enable Hide Watched Videos': 'Ativar Ocultação de Vídeos Assistidos',
+    'Watched Videos Threshold': 'Percentual Mínimo Assistido',
+    'Set the threshold percentage to determine when a video is considered watched.': 'Defina o percentual mínimo assistido para ocultar vídeos já vistos.',
+    'Set Pages to Hide Watched Videos': 'Definir Páginas para Ocultar Vídeos Assistidos',
+    'Screen Dimming': 'Escurecimento da Tela',
+    'Enable Screen Dimming': 'Ativar Escurecimento da Tela',
+    'Dimming Timeout': 'Tempo de Espera do Escurecimento',
+    'Set the inactivity timeout (in seconds) before the screen dims': 'Defina o tempo de espera por inatividade (em segundos) antes que a tela escureça',
+    'Dimming Opacity': 'Opacidade do Escurecimento',
+    'Set the opacity level for screen dimming': 'Defina o nível de opacidade para o escurecimento da tela',
+    'Disable Sidebar Contents': 'Desativar Conteúdos da Barra Lateral',
+    'Select sidebar contents to hide': 'Selecione os conteúdos da barra lateral para ocultar',
+    'Launch to on Startup': 'Página Inicial ao Abrir',
+    'Choose the default page TubeRush launches into on startup': 'Escolha a página padrão que o TubeRush abrirá na inicialização',
+    'Sort Subscriptions Alphabetically': 'Ordenar Inscrições em Ordem Alfabética',
+    'Disable Channels on Sidebar': 'Desativar Canais na Barra Lateral',
+    'Clock': 'Relógio',
+    'Display a clock on the screen': 'Exibir um relógio na tela',
+    'Enable Clock': 'Ativar Relógio',
+    'Use 12-Hour Format for Clock': 'Usar Formato de 12 Horas no Relógio',
+    'Show Seconds on Clock': 'Mostrar Segundos no Relógio',
+    'Hide Clock While Video is Playing': 'Ocultar Relógio Durante a Reprodução',
+    'Disable Enlarged Thumbnails': 'Desativar Miniaturas Ampliadas',
+    'Enable Shrinked Thumbnails': 'Ativar Miniaturas Reduzidas',
+    'Sort Sidebar Contents': 'Ordenar Conteúdos da Barra Lateral',
+    'Reorder sidebar contents to your preference': 'Reordene os itens da barra lateral conforme sua preferência',
+    'TubeRush Updater': 'Atualizador do TubeRush',
+    'Manage TubeRush updates': 'Gerenciar atualizações do TubeRush',
+    'Check for updates': 'Verificar atualizações',
+    'Check for updates on startup': 'Verificar atualizações ao iniciar',
+    'Update Available': 'Atualização Disponível',
+    'Update Now': 'Atualizar Agora',
+    'Click to download the latest version.': 'Clique para baixar a versão mais recente.',
+    'Remind Me Later': 'Lembrar Mais Tarde',
+    'Check for updates later.': 'Verificar atualizações mais tarde.',
+    'TubeRush is up to date': 'O TubeRush está atualizado',
+    'TubeRush update check failed': 'Falha ao verificar atualizações do TubeRush',
+    'Could not check for updates.': 'Não foi possível verificar se há atualizações.',
+    'TubeRush Update': 'Atualização do TubeRush',
+    'Downloading update, please wait...': 'Baixando atualização, aguarde...',
+    'Support TubeRush': 'Apoie o TizenTube / TubeRush',
+    '❤️ Show support for TubeRush and its development': '❤️ Mostre apoio ao desenvolvimento do projeto',
+    'Welcome to TubeRush': 'Bem-vindo ao TubeRush',
+    'Go to settings and click on TubeRush Settings for settings.': 'Vá em Configurações e clique em Configurações do TubeRush.'
+  };
+
   function rebrandString(str) {
-    if (typeof str !== 'string' || !str.includes('TizenTube')) return str;
-    if (str.includes('Reis Can') || str.includes('reisxd') || str.includes('github.com/')) return str;
-    return str.replace(/TizenTube\s+Cobalt/g, 'TubeRush').replace(/TizenTube/g, 'TubeRush');
+    if (typeof str !== 'string' || !str) return str;
+    if (str.includes('Reis Can') || str.includes('reisxd')) {
+      return PT_BR_DICT[str] || str;
+    }
+    if (str.includes('github.com/')) return str;
+    let s = str;
+    if (s.includes('TizenTube')) {
+      s = s.replace(/TizenTube\s+Cobalt/g, 'TubeRush').replace(/TizenTube/g, 'TubeRush');
+    }
+    if (PT_BR_DICT[s]) return PT_BR_DICT[s];
+    if (/^Current version:\s*(.+)$/i.test(s)) {
+      return s.replace(/^Current version:\s*/i, 'Versão atual: ');
+    }
+    if (/^Versão Atual:\s*(.+)$/i.test(s)) {
+      return s;
+    }
+    if (/^You are using the latest version \((.+)\) of TubeRush\.$/i.test(s)) {
+      return s.replace(/^You are using the latest version \((.+)\) of TubeRush\.$/i, 'Você já está usando a versão mais recente ($1) do TubeRush.');
+    }
+    if (/^A new version of TubeRush is available:\s*(.+),\s*current:\s*(.+)$/i.test(s)) {
+      return s.replace(/^A new version of TubeRush is available:\s*(.+),\s*current:\s*(.+)$/i, 'Uma nova versão do TubeRush está disponível: $1 (atual: $2)');
+    }
+    if (/^Release Date:\s*(.+)$/i.test(s)) {
+      return s.replace(/^Release Date:\s*/i, 'Data de lançamento: ');
+    }
+    return s;
   }
 
   function rebrandObjectInPlace(node, depth) {
-    if (!node || typeof node !== 'object' || (depth || 0) > 12) return node;
+    if (!node || typeof node !== 'object' || (depth || 0) > 10) return node;
     const d = (depth || 0) + 1;
     if (Array.isArray(node)) {
       for (let i = 0; i < node.length; i++) {
@@ -732,6 +926,7 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       return node;
     }
     for (const k of Object.keys(node)) {
+      if (k === 'customAction' || k === 'categoryId' || k === 'itemId' || k === 'trackingParams') continue;
       const val = node[k];
       if (typeof val === 'string') {
         node[k] = rebrandString(val);
@@ -742,73 +937,58 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     return node;
   }
 
-  // 11. Intercept JSON.parse with Property Trap so tizentube.js's destructive codec filter
-  // on adaptiveFormats is neutralized while preserving all TizenTube features (adblock, SponsorBlock, UI).
-  const nativeJsonParse = window.JSON.parse.bind(window.JSON);
-  let externalJsonParseWrapper = null;
-  let inExternalJsonParse = false;
-
-  function masterJsonParse() {
-    if (inExternalJsonParse || !externalJsonParseWrapper) {
-      const rawRes = nativeJsonParse.apply(this, arguments);
-      try {
-        if (rawRes && rawRes.streamingData && Array.isArray(rawRes.streamingData.adaptiveFormats)) {
-          if (inExternalJsonParse) {
-            Object.defineProperty(rawRes, '__ttRawAdaptiveFormats', {
-              value: rawRes.streamingData.adaptiveFormats.slice(),
-              configurable: true,
-              enumerable: false
-            });
-            return rawRes;
-          }
-          return processPlayerPayload(rawRes);
-        }
-      } catch (e) {}
-      return rawRes;
-    }
-
-    inExternalJsonParse = true;
-    let res;
-    try {
-      res = externalJsonParseWrapper.apply(this, arguments);
-    } finally {
-      inExternalJsonParse = false;
-    }
-
+  // 11. Clean, chain-safe JSON.parse hook:
+  // Keeps window.JSON.parse as a standard writable function so tizentube.js's two-stage
+  // wrapper chain (vo -> fn1 -> Gr -> fn2) executes 100% natively (injecting the TubeRush/TizenTube
+  // Settings category above "Assinar o YouTube Premium", AdBlock, SponsorBlock, DeArrow, etc.),
+  // while protecting res.streamingData.adaptiveFormats with an instance setter so tizentube.js's
+  // `.filter(...)` cannot strip out AV1, VP9, or AVC codecs!
+  window.JSON.parse = function () {
+    const res = nativeJsonParse.apply(this, arguments);
     try {
       if (res && typeof res === 'object') {
         if (res.streamingData && Array.isArray(res.streamingData.adaptiveFormats)) {
-          if (Array.isArray(res.__ttRawAdaptiveFormats) &&
-              res.__ttRawAdaptiveFormats.length > res.streamingData.adaptiveFormats.length) {
-            res.streamingData.adaptiveFormats = res.__ttRawAdaptiveFormats.slice();
-          }
-          delete res.__ttRawAdaptiveFormats;
           processPlayerPayload(res);
+          let protectedFormats = res.streamingData.adaptiveFormats;
+          try {
+            Object.defineProperty(res.streamingData, 'adaptiveFormats', {
+              configurable: true,
+              enumerable: true,
+              get: function () {
+                return protectedFormats;
+              },
+              set: function (newVal) {
+                // Ignore destructive codec filtering from tizentube.js fn1 that shrinks the format list!
+                if (Array.isArray(newVal) && newVal.length >= protectedFormats.length) {
+                  protectedFormats = newVal;
+                }
+              }
+            });
+          } catch (e) {}
         }
-        if (res.openPopupAction || res.settingCategoryCollectionRenderer || res.overlayPanelRenderer) {
-          rebrandObjectInPlace(res, 0);
+        // When Settings response is parsed, tizentube.js fn1 calls `res.items.unshift(o)`
+        // to inject the Settings button above "Assinar o YouTube Premium". Rebrand `o` on unshift!
+        if (res.title && res.title.runs && Array.isArray(res.items) && !res.items.__ttUnshiftHooked) {
+          const origUnshift = res.items.unshift;
+          Object.defineProperty(res.items, '__ttUnshiftHooked', { value: true, enumerable: false });
+          Object.defineProperty(res.items, 'unshift', {
+            configurable: true,
+            enumerable: false,
+            writable: true,
+            value: function () {
+              for (let i = 0; i < arguments.length; i++) {
+                try {
+                  rebrandObjectInPlace(arguments[i], 0);
+                } catch (e) {}
+              }
+              return origUnshift.apply(this, arguments);
+            }
+          });
         }
       }
     } catch (e) {}
     return res;
-  }
-
-  try {
-    Object.defineProperty(window.JSON, 'parse', {
-      configurable: true,
-      enumerable: true,
-      get: function () {
-        return masterJsonParse;
-      },
-      set: function (fn) {
-        if (typeof fn === 'function' && fn !== masterJsonParse) {
-          externalJsonParseWrapper = fn;
-        }
-      }
-    });
-  } catch (e) {
-    window.JSON.parse = masterJsonParse;
-  }
+  };
 
   // 12. Normalize GitHub Releases payload for TubeRush Self-Updater (U01)
   function parseSemverTuple(verStr) {
@@ -832,8 +1012,12 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         const v = window.h5vcc.system.getVersion();
         if (v) return String(v).replace(/^v/i, '');
       }
+      if (window.h5vcc && window.h5vcc.tizentube && typeof window.h5vcc.tizentube.GetVersion === 'function') {
+        const v = window.h5vcc.tizentube.GetVersion();
+        if (v) return String(v).replace(/^v/i, '');
+      }
     } catch (e) {}
-    return '2.0.3';
+    return '1.1.1';
   }
 
   function normalizeReleasePayload(data) {
@@ -917,11 +1101,15 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     return '';
   }
 
+  let hasPendingResume = false;
   function reloadPlayerAtCurrentTime(vid) {
     const v = document.querySelector('video');
     const t = v ? (v.currentTime || 0) : 0;
     try {
-      if (t > 1) sessionStorage.setItem(SESSION_RESUME_PREFIX + vid, String(t));
+      if (t > 1) {
+        sessionStorage.setItem(SESSION_RESUME_PREFIX + vid, String(t));
+        hasPendingResume = true;
+      }
     } catch (e) {}
     const p = document.getElementById('ytlr-player__player-container-player');
     try {
@@ -930,6 +1118,7 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         setTimeout(() => {
           try {
             if (p && typeof p.playVideo === 'function') p.playVideo();
+            checkResume();
           } catch (e) {}
         }, 150);
         return;
@@ -941,6 +1130,7 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         setTimeout(() => {
           try {
             if (p && typeof p.playVideo === 'function') p.playVideo();
+            checkResume();
           } catch (e) {}
         }, 150);
         return;
@@ -949,14 +1139,16 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     location.reload();
   }
 
-  // Resume playback position smoothly after audio stream switch
+  // Resume playback position smoothly after audio stream switch (only runs when a resume is pending)
   function checkResume() {
+    if (!hasPendingResume) return;
     const vid = getCurrentVideoId();
     if (!vid) return;
     try {
       const saved = sessionStorage.getItem(SESSION_RESUME_PREFIX + vid);
       if (saved) {
         sessionStorage.removeItem(SESSION_RESUME_PREFIX + vid);
+        hasPendingResume = false;
         const t = parseFloat(saved);
         const v = document.querySelector('video');
         if (v && !isNaN(t) && t > 1) {
@@ -972,7 +1164,6 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       }
     } catch (e) {}
   }
-  setInterval(checkResume, 1000);
 
   function getActiveItagsFromStats(p) {
     let videoItag = null;
@@ -1067,36 +1258,48 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       if (!window._yttv || typeof window._yttv !== 'object') return;
       for (const k of Object.keys(window._yttv)) {
         const entry = window._yttv[k];
-        const inst = entry && entry.instance;
-        if (inst && typeof inst.resolveCommand === 'function' && !inst.__ttL1ResolveHooked) {
+        if (!entry || typeof entry !== 'object') continue;
+        // Keep _yttv JSON.parse synchronized with window.JSON.parse chain
+        if (entry.JSON && entry.JSON.parse && entry.JSON.parse !== window.JSON.parse) {
+          entry.JSON.parse = window.JSON.parse;
+        }
+        const inst = entry.instance;
+        if (inst && typeof inst.resolveCommand === 'function' && !inst.resolveCommand.__ttL1ResolveHooked) {
           const origResolve = inst.resolveCommand.bind(inst);
-          inst.resolveCommand = function (cmd, arg2) {
+          const wrappedResolve = function (cmd, arg2) {
             try {
-              if (cmd && typeof cmd === 'object') {
+              if (cmd && typeof cmd === 'object' && (cmd.openPopupAction || cmd.showEngagementPanelEndpoint)) {
                 rebrandObjectInPlace(cmd, 0);
               }
             } catch (e) {}
             return origResolve(cmd, arg2);
           };
-          inst.__ttL1ResolveHooked = true;
+          wrappedResolve.__ttL1ResolveHooked = true;
+          inst.resolveCommand = wrappedResolve;
         }
       }
     } catch (e) {}
   }
 
-  // 13. Hook native YouTube TV Player API methods idempotently (once per player instance)
+  // 13. Hook native YouTube TV Player API methods AFTER player.js GJ() attaches them onto p
   function hookPlayerApi() {
     hookYttvResolveCommand();
+    if (hasPendingResume) checkResume();
     const p = document.getElementById('ytlr-player__player-container-player');
-    if (!p || p.__ttL1Hooked) return;
-    p.__ttL1Hooked = true;
+    if (!p) return;
+    // Wait until player.js GJ() has populated the native player API methods on the DOM element!
+    if (typeof p.setPlaybackQualityRange !== 'function' ||
+        typeof p.getAvailableQualityDataAndMessaging !== 'function') {
+      return;
+    }
+    // If our hook is already the active method on p, do nothing!
+    // (If player.js GJ() runs later and overwrites p's methods, __ttL1OurHook will be absent and we re-hook!)
+    if (p.getAvailableQualityDataAndMessaging.__ttL1OurHook) {
+      return;
+    }
 
-    const origQDataMsg = typeof p.getAvailableQualityDataAndMessaging === 'function'
-      ? p.getAvailableQualityDataAndMessaging.bind(p)
-      : null;
-    const origSetQuality = typeof p.setPlaybackQualityRange === 'function'
-      ? p.setPlaybackQualityRange.bind(p)
-      : null;
+    const origQDataMsg = p.getAvailableQualityDataAndMessaging.bind(p);
+    const origSetQuality = p.setPlaybackQualityRange.bind(p);
     const origGetQualityLabel = typeof p.getPlaybackQualityLabel === 'function'
       ? p.getPlaybackQualityLabel.bind(p)
       : null;
@@ -1104,25 +1307,29 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       ? p.getUserPlaybackQualityPreference.bind(p)
       : null;
 
-    // A. Native "Qualidade" Menu: Return all video formats with valid YouTube quality keys + formatId
-    p.getAvailableQualityDataAndMessaging = function () {
+    // A. Native "Qualidade do vídeo atual" Menu:
+    // Return all video formats (AV1, VP9, AVC) ordered at each resolution by:
+    // 1. User preferredVideoCodec (if set)
+    // 2. Codec quality rank: AV1 (best) -> VP9 (intermediate) -> AVC (compatibility)
+    // 3. HDR -> FPS -> Bitrate
+    const hookedGetQDataMsg = function () {
       const vid = getCurrentVideoId();
       const cat = (vid && catalog[vid]) || null;
       if (cat && cat.videos && cat.videos.length) {
         const activeVid = getCurrentlyPlayingVideoFormat(vid, p);
         const prefs = getUserPreferences();
-        // Order same-resolution formats so preferredVideoCodec appears first at each height
-        // (so tizentube.js's Mr() `.find(e => parseInt(e.qualityLabel) === n)` picks the preferred codec!)
         const ordered = cat.videos.slice().sort((a, b) => {
           const hDiff = Number(b.height || 0) - Number(a.height || 0);
           if (hDiff !== 0) return hDiff;
           const matchA = codecMatchesPreference(a.mimeType, prefs.preferredVideoCodec) ? 1 : 0;
           const matchB = codecMatchesPreference(b.mimeType, prefs.preferredVideoCodec) ? 1 : 0;
           if (matchA !== matchB) return matchB - matchA;
-          const fpsDiff = Number(b.fps || 30) - Number(a.fps || 30);
-          if (fpsDiff !== 0) return fpsDiff;
+          const rankDiff = defaultCodecRank(b.mimeType) - defaultCodecRank(a.mimeType);
+          if (rankDiff !== 0) return rankDiff;
           const hdrDiff = (isHdrFormat(b) ? 1 : 0) - (isHdrFormat(a) ? 1 : 0);
           if (hdrDiff !== 0) return hdrDiff;
+          const fpsDiff = Number(b.fps || 30) - Number(a.fps || 30);
+          if (fpsDiff !== 0) return fpsDiff;
           return Number(b.bitrate || b.averageBitrate || 0) - Number(a.bitrate || a.averageBitrate || 0);
         });
         const qualityData = ordered.map(f => {
@@ -1140,6 +1347,8 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       }
       return origQDataMsg ? origQDataMsg() : { qualityData: [] };
     };
+    hookedGetQDataMsg.__ttL1OurHook = true;
+    p.getAvailableQualityDataAndMessaging = hookedGetQDataMsg;
 
     p.getAvailableQualityData = function () {
       const res = p.getAvailableQualityDataAndMessaging();
@@ -1162,6 +1371,10 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
 
     p.getUserPlaybackQualityPreference = function () {
       const vid = getCurrentVideoId();
+      const active = getCurrentlyPlayingVideoFormat(vid, p);
+      if (active && active.height) {
+        return heightToQualityKey(active.height);
+      }
       const pin = getPin(vid);
       if (pin && pin.manualVideo && pin.videoItag) {
         const cat = (vid && catalog[vid]) || null;
@@ -1184,8 +1397,9 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       return 'auto';
     };
 
-    // Non-destructive video quality selection (supports both Kabuki 3-arg manual selection
-    // and TizenTube 2-arg startup/preference selection without freezing or hiding formats)
+    // Non-destructive, zero-stutter video quality selection:
+    // Avoids calling origSetQuality when the target format is ALREADY playing so player.js
+    // never detaches/reattaches MediaSource (reattachOnConstraint) unnecessarily on startup!
     p.setPlaybackQualityRange = function (minQ, maxQ, formatId) {
       const vid = getCurrentVideoId();
       const cat = (vid && catalog[vid]) || null;
@@ -1200,8 +1414,11 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
           if (prefs.preferredVideoQuality && prefs.preferredVideoQuality !== 'auto' && cat && cat.videos && cat.videos.length) {
             const best = selectBestVideoFormat(cat.videos, prefs.preferredVideoQuality, prefs.preferredVideoCodec);
             if (best) {
-              const qKey = heightToQualityKey(best.height);
-              ret = origSetQuality(qKey, qKey, String(best.itag));
+              const stats = getActiveItagsFromStats(p);
+              if (!stats.videoItag || Number(stats.videoItag) !== Number(best.itag)) {
+                const qKey = heightToQualityKey(best.height);
+                ret = origSetQuality(qKey, qKey, String(best.itag));
+              }
             } else {
               ret = origSetQuality('auto', 'auto', '');
             }
@@ -1231,8 +1448,12 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
           const targetFmt = cat.videos.find(v => Number(v.itag) === explicitItag);
           if (targetFmt) {
             setPin(vid, { videoItag: Number(targetFmt.itag), manualVideo: true });
-            const qKey = heightToQualityKey(targetFmt.height);
-            const ret = origSetQuality ? origSetQuality(qKey, qKey, String(targetFmt.itag)) : undefined;
+            const stats = getActiveItagsFromStats(p);
+            let ret;
+            if (!stats.videoItag || Number(stats.videoItag) !== Number(targetFmt.itag)) {
+              const qKey = heightToQualityKey(targetFmt.height);
+              ret = origSetQuality ? origSetQuality(qKey, qKey, String(targetFmt.itag)) : undefined;
+            }
             try {
               p.dispatchEvent(new CustomEvent('onPlaybackQualityChange'));
             } catch (e) {}
@@ -1246,6 +1467,10 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         if (pin && pin.manualVideo && pin.videoItag) {
           const pinnedFmt = cat.videos.find(v => Number(v.itag) === Number(pin.videoItag));
           if (pinnedFmt) {
+            const stats = getActiveItagsFromStats(p);
+            if (stats.videoItag && Number(stats.videoItag) === Number(pinnedFmt.itag)) {
+              return undefined;
+            }
             const qKey = heightToQualityKey(pinnedFmt.height);
             return origSetQuality ? origSetQuality(qKey, qKey, String(pinnedFmt.itag)) : undefined;
           }
@@ -1258,8 +1483,13 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
         const bestFmt = selectBestVideoFormat(cat.videos, requestedPref, prefs.preferredVideoCodec);
         if (bestFmt) {
           setPin(vid, { videoItag: Number(bestFmt.itag), manualVideo: false });
-          const qKey = heightToQualityKey(bestFmt.height);
-          const ret = origSetQuality ? origSetQuality(qKey, qKey, String(bestFmt.itag)) : undefined;
+          const stats = getActiveItagsFromStats(p);
+          let ret;
+          // Only call origSetQuality if the player isn't already decoding bestFmt.itag!
+          if (!stats.videoItag || Number(stats.videoItag) !== Number(bestFmt.itag)) {
+            const qKey = heightToQualityKey(bestFmt.height);
+            ret = origSetQuality ? origSetQuality(qKey, qKey, String(bestFmt.itag)) : undefined;
+          }
           try {
             p.dispatchEvent(new CustomEvent('onPlaybackQualityChange'));
           } catch (e) {}
@@ -1280,8 +1510,6 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
       const cat = (vid && catalog[vid]) || null;
       if (cat && cat.audios && cat.audios.length) {
         const activeAudio = getCurrentlyPlayingAudioTrack(vid, p);
-        // Deduplicate by composite audioKey (itag + trackId + isDrc + channels) so
-        // multi-language tracks (pt-BR, en-US, es-US) and DRC variants are NEVER collapsed!
         const seen = new Set();
         const uniqueAuds = [];
         for (const a of cat.audios) {
@@ -1365,48 +1593,44 @@ inline constexpr char kL1MediaUiScript[] = R"L1SCRIPT(
     };
   }
 
-  let lastAutoEnforcedVid = '';
-  let lastAutoEnforcedCount = 0;
-
-  function enforceInitialPreferredQuality() {
-    try {
-      const p = document.getElementById('ytlr-player__player-container-player');
-      if (!p || !p.__ttL1Hooked || typeof p.setPlaybackQualityRange !== 'function') return;
-      const vid = getCurrentVideoId();
-      if (!vid) return;
-      const cat = catalog[vid];
-      if (!cat || !cat.videos || !cat.videos.length) return;
-      const pin = getPin(vid);
-      if (pin && pin.manualVideo) return;
-      const prefs = getUserPreferences();
-      if ((!prefs.preferredVideoQuality || prefs.preferredVideoQuality === 'auto') &&
-          (!prefs.preferredVideoCodec || prefs.preferredVideoCodec === 'any')) {
-        return;
-      }
-      const best = selectBestVideoFormat(cat.videos, prefs.preferredVideoQuality, prefs.preferredVideoCodec);
-      if (!best) return;
-      if (vid !== lastAutoEnforcedVid) {
-        lastAutoEnforcedVid = vid;
-        lastAutoEnforcedCount = 0;
-      }
-      const stats = getActiveItagsFromStats(p);
-      if (stats.videoItag && Number(stats.videoItag) === Number(best.itag)) {
-        lastAutoEnforcedCount = 99;
-        return;
-      }
-      if (lastAutoEnforcedCount < 2) {
-        lastAutoEnforcedCount++;
-        const qKey = heightToQualityKey(best.height);
-        p.setPlaybackQualityRange(qKey, qKey, String(best.itag));
-      }
-    } catch (e) {}
-  }
+  // 14. Main-Thread Fluidity Optimization:
+  // Cache Function.prototype.toString in a WeakMap and cap tizentube.js's `_r()` 250ms polling
+  // over window._yttv so it never allocates 4 MB/sec of C++ function strings during video playback!
+  try {
+    if (typeof WeakMap === 'function' && Function.prototype && Function.prototype.toString) {
+      const origFnToString = Function.prototype.toString;
+      const fnStringCache = new WeakMap();
+      Function.prototype.toString = function () {
+        if (typeof this === 'function') {
+          let cached = fnStringCache.get(this);
+          if (cached !== undefined) return cached;
+          cached = origFnToString.call(this);
+          fnStringCache.set(this, cached);
+          return cached;
+        }
+        return origFnToString.call(this);
+      };
+    }
+    if (typeof window.setTimeout === 'function') {
+      const origSetTimeout = window.setTimeout.bind(window);
+      let rPollCountWithVideo = 0;
+      window.setTimeout = function (fn, delay) {
+        if (delay === 250 && typeof fn === 'function' && fn.name === '_r') {
+          if (document.querySelector('video')) {
+            rPollCountWithVideo++;
+            if (rPollCountWithVideo > 6) {
+              return 0;
+            }
+            return origSetTimeout(fn, 1000);
+          }
+        }
+        return origSetTimeout.apply(this, arguments);
+      };
+    }
+  } catch (e) {}
 
   window.__ttL1HookPlayerApi = hookPlayerApi;
-  setInterval(function () {
-    hookPlayerApi();
-    enforceInitialPreferredQuality();
-  }, 1000);
+  setInterval(hookPlayerApi, 500);
 })();
 )L1SCRIPT";
 

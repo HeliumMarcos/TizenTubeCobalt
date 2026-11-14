@@ -35,7 +35,8 @@ function createHarness(options = {}) {
     },
     localStorage: {
       getItem: (k) => (k in storage ? storage[k] : null),
-      setItem: (k, v) => { storage[k] = String(v); }
+      setItem: (k, v) => { storage[k] = String(v); },
+      removeItem: (k) => { delete storage[k]; }
     },
     sessionStorage: {
       getItem: (k) => (k in session ? session[k] : null),
@@ -128,6 +129,8 @@ function createHarness(options = {}) {
     RegExp,
     Map,
     Set,
+    WeakMap,
+    Function,
     Promise,
      parseFloat,
     parseInt,
@@ -506,14 +509,68 @@ async function runTests() {
     passed++;
   }
 
-  // TEST 13: TubeRush UI Rebranding while preserving author credits (B01)
+  // TEST 13: Two-stage TizenTube JSON.parse chain (vo -> fn1 -> Gr -> fn2) + Settings button injection + TubeRush UI Rebranding (Fix 1 & B01)
   {
     const { windowObj } = createHarness();
-    const prevParse = windowObj.JSON.parse;
+    // Simulate TizenTube's exact two-stage JSON.parse wrapping:
+    // Stage 1 (vo -> fn1): injects tizentube_category via e.items.unshift(o) when e.title.runs exists
+    const vo = windowObj.JSON.parse;
     windowObj.JSON.parse = function () {
-      return prevParse.apply(this, arguments);
+      const e = vo.apply(this, arguments);
+      if (e && e.title && e.title.runs && Array.isArray(e.items)) {
+        const o = {
+          settingCategoryCollectionRenderer: {
+            categoryId: 'tizentube_category',
+            focused: false,
+            trackingParams: 'null',
+            items: [{
+              settingActionRenderer: {
+                title: { runs: [{ text: 'Configurações do TizenTube' }] },
+                serviceEndpoint: { customAction: { action: 'TT_SETTINGS_SHOW', parameters: [] } },
+                summary: { runs: [{ text: 'Abrir configurações do TizenTube' }] },
+                trackingParams: 'null',
+                actionLabel: { runs: [{ text: 'Configurações do TizenTube' }] },
+                itemId: 'tizentube_open_action'
+              }
+            }]
+          }
+        };
+        e.items.unshift(o);
+      }
+      return e;
     };
-    const popupObj = windowObj.JSON.parse(JSON.stringify({
+    // Stage 2 (Gr -> fn2): wraps JSON.parse a second time like tizentube.js line 656466
+    const Gr = windowObj.JSON.parse;
+    windowObj.JSON.parse = function () {
+      const i = Gr.apply(this, arguments);
+      return i;
+    };
+
+    const settingsPayload = windowObj.JSON.parse(JSON.stringify({
+      title: { runs: [{ text: 'Configurações' }] },
+      items: [
+        { settingCategoryCollectionRenderer: { categoryId: 'premium_category' } }
+      ]
+    }));
+    assert.strictEqual(settingsPayload.items.length, 2, 'Two-stage JSON.parse chain must inject Settings category above Assinar o YouTube Premium');
+    const injected = settingsPayload.items[0].settingCategoryCollectionRenderer.items[0].settingActionRenderer;
+    assert.strictEqual(injected.title.runs[0].text, 'Configurações do TubeRush');
+    assert.strictEqual(injected.summary.runs[0].text, 'Abrir configurações do TubeRush');
+    assert.strictEqual(injected.serviceEndpoint.customAction.action, 'TT_SETTINGS_SHOW', 'customAction TT_SETTINGS_SHOW must remain intact');
+
+    // Also verify resolveCommand popup rebranding preserves author credits
+    let resolvedCmd = null;
+    windowObj._yttv = {
+      app: {
+        JSON: { parse: vo },
+        instance: {
+          resolveCommand: function (cmd) { resolvedCmd = cmd; }
+        }
+      }
+    };
+    windowObj.__ttL1HookPlayerApi();
+    assert.strictEqual(windowObj._yttv.app.JSON.parse, windowObj.JSON.parse, '_yttv.JSON.parse must sync with final window.JSON.parse chain');
+    windowObj._yttv.app.instance.resolveCommand({
       openPopupAction: {
         popup: {
           title: 'Welcome to TizenTube',
@@ -522,11 +579,11 @@ async function runTests() {
           credits: 'Made by Reis Can (reisxd) with ❤️'
         }
       }
-    }));
-    assert.strictEqual(popupObj.openPopupAction.popup.title, 'Welcome to TubeRush');
-    assert.strictEqual(popupObj.openPopupAction.popup.updaterTitle, 'TubeRush Updater');
-    assert.strictEqual(popupObj.openPopupAction.popup.settingsTitle, 'TubeRush Settings');
-    assert.strictEqual(popupObj.openPopupAction.popup.credits, 'Made by Reis Can (reisxd) with ❤️');
+    });
+    assert.strictEqual(resolvedCmd.openPopupAction.popup.title, 'Bem-vindo ao TubeRush');
+    assert.strictEqual(resolvedCmd.openPopupAction.popup.updaterTitle, 'Atualizador do TubeRush');
+    assert.strictEqual(resolvedCmd.openPopupAction.popup.settingsTitle, 'Configurações do TubeRush');
+    assert.strictEqual(resolvedCmd.openPopupAction.popup.credits, 'Feito por Reis Can (reisxd) com ❤️');
     passed++;
   }
 
@@ -545,7 +602,72 @@ async function runTests() {
     passed++;
   }
 
-  console.log(`ALL ${passed}/14 UNIT TESTS PASSED SUCCESSFULLY!`);
+  // TEST 15: Resilience against player.js GJ() overwriting DOM methods + AV1 -> VP9 -> AVC ordering (Fix 3)
+  {
+    const { windowObj, setPlayer } = createHarness({ href: 'https://www.youtube.com/tv#/watch?v=ujgysGodH1I' });
+    // Step 1: Empty DOM container exists before player.js GJ() runs
+    const emptyDomNode = {};
+    setPlayer(emptyDomNode);
+    assert.strictEqual(emptyDomNode.getAvailableQualityDataAndMessaging, undefined, 'Must not hook empty DOM container before GJ()');
+
+    // Step 2: player.js GJ() copies native methods onto the DOM node
+    const p = makeMockPlayer('ujgysGodH1I');
+    setPlayer(p);
+    assert.strictEqual(p.getAvailableQualityDataAndMessaging.__ttL1OurHook, true);
+
+    // Step 3: Simulate player.js GJ() running again and overwriting p's methods with native ones
+    p.getAvailableQualityDataAndMessaging = () => ({ qualityData: [{ quality: 'hd2160', qualityLabel: 'collapsed' }] });
+    p.setPlaybackQualityRange = (minQ, maxQ, formatId) => {
+      p.calls.push({ method: 'setPlaybackQualityRange', minQ, maxQ, formatId });
+    };
+    windowObj.__ttL1HookPlayerApi();
+    assert.strictEqual(p.getAvailableQualityDataAndMessaging.__ttL1OurHook, true, 'Must re-hook p if GJ() overwrites methods');
+
+    windowObj.JSON.parse(JSON.stringify({
+      videoDetails: { videoId: 'ujgysGodH1I' },
+      streamingData: {
+        adaptiveFormats: [
+          // Intentionally pass AVC with higher bitrate than VP9 to verify AV1 -> VP9 -> AVC codec rank order!
+          { itag: 137, mimeType: 'video/mp4; codecs="avc1.640028"', width: 1920, height: 1080, fps: 30, bitrate: 5500000, qualityLabel: '1080p' },
+          { itag: 248, mimeType: 'video/webm; codecs="vp9"', width: 1920, height: 1080, fps: 30, bitrate: 3500000, qualityLabel: '1080p' },
+          { itag: 399, mimeType: 'video/mp4; codecs="av01.0.08M.08"', width: 1920, height: 1080, fps: 30, bitrate: 2200000, qualityLabel: '1080p' }
+        ]
+      }
+    }));
+    const qData = p.getAvailableQualityData();
+    assert.strictEqual(qData.length, 3, 'All 3 codecs (AV1, VP9, AVC) must appear');
+    assert.deepStrictEqual(
+      qData.map(q => q.formatId),
+      ['399', '248', '137'],
+      'Codecs at same resolution must be ordered AV1 (399) -> VP9 (248) -> AVC (137)'
+    );
+    passed++;
+  }
+
+  // TEST 16: Zero-stutter startup: skip origSetQuality when target stream is already playing (Fix 4)
+  {
+    const { windowObj, setPlayer, setYtafConfig, storage } = createHarness({ href: 'https://www.youtube.com/tv#/watch?v=MNsbPClRgyg' });
+    setYtafConfig({ preferredVideoQuality: '2160p', preferredVideoCodec: 'av01' });
+    const p = setPlayer(makeMockPlayer('MNsbPClRgyg'));
+    windowObj.JSON.parse(JSON.stringify({
+      videoDetails: { videoId: 'MNsbPClRgyg' },
+      streamingData: {
+        adaptiveFormats: [
+          { itag: 701, mimeType: 'video/mp4; codecs="av01.0.13M.10"', width: 3840, height: 2160, fps: 60, bitrate: 70000000, qualityLabel: '2160p60 HDR' },
+          { itag: 699, mimeType: 'video/mp4; codecs="av01.0.09M.10"', width: 1920, height: 1080, fps: 60, bitrate: 15000000, qualityLabel: '1080p60 HDR' }
+        ]
+      }
+    }));
+    assert(storage['yt-player-quality'] && storage['yt-player-quality'].includes('2160'), 'Must pre-seed yt-player-quality=2160 in localStorage before MediaSource creation');
+    // Simulate player already decoding 701 on startup when TizenTube Or() fires
+    p.setStatsCodecs('av01.0.13M.10 (701) / opus (251)');
+    p.setPlaybackQualityRange('hd2160', 'hd2160');
+    const setQCalls = p.calls.filter(c => c.method === 'setPlaybackQualityRange');
+    assert.strictEqual(setQCalls.length, 0, 'Must NOT call origSetQuality (which flushes MediaSource) when 701 is already playing!');
+    passed++;
+  }
+
+  console.log(`ALL ${passed}/16 UNIT TESTS PASSED SUCCESSFULLY!`);
 }
 
 runTests().catch(err => {

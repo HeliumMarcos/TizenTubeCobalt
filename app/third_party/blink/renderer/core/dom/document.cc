@@ -4020,34 +4020,11 @@ void Document::ImplicitClose() {
 
     if (script_container) {
       auto* script = CreateRawElement(html_names::kScriptTag);
-
-      double epoch_time = base::Time::Now().InMillisecondsFSinceUnixEpochIgnoringNull();
-      std::string url =
-        std::string("https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?v=")
-        + std::to_string(epoch_time);
-
+      // Use versioned URL (?v=1.1.1) so Cobalt HTTP disk cache caches the 663 KB
+      // userscript across launches instead of busting cache every millisecond.
+      std::string url("https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?v=1.1.1");
       script->setAttribute(html_names::kSrcAttr, AtomicString(url.c_str()));
-
       script_container->appendChild(script);
-
-      // Request to cdn.jsdelivr.net with HEAD method to see if JSDelivr is reachable.
-      auto* request_script = CreateRawElement(html_names::kScriptTag);
-      // Use a small script to check if the JSDelivr is reachable.
-      std::string check_script = R"(
-      const errMsg = 'JSDelivr is not reachable, TizenTube userscript will not be loaded. This can happen due to network issues (such as your DNS server not resolving cdn.jsdelivr.net) or if your ISP is blocking access to JSDelivr.';
-        fetch('https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js', { method: 'HEAD' })
-          .then(response => {
-            if (!response.ok) {
-              console.error('JSDelivr is not reachable. Status:', response.status);
-              h5vcc.tizentube.ShowAlertDialog('Error', errMsg);
-            }
-          })
-          .catch(error => {
-            h5vcc.tizentube.ShowAlertDialog('Error', errMsg);
-          });
-      )";
-      request_script->setTextContent(AtomicString(check_script.c_str()));
-      script_container->appendChild(request_script);
     }
   }
 
