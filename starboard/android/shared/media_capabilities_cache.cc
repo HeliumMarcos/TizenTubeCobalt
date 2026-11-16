@@ -479,8 +479,13 @@ std::string MediaCapabilitiesCache::FindVideoDecoder(
       continue;
     }
     // Reject if bitrate is not supported.
+    // In Android TV devices, MediaCodec getBitrateRange() often reports a conservative
+    // max bitrate which causes high-bitrate 2160p (4K) streams to be rejected.
+    // If resolution and framerate are supported, allow the decoder even if the advertised bitrate range is exceeded.
     if (bitrate != 0 && !video_capability->IsBitrateSupported(bitrate)) {
-      continue;
+      SB_LOG(WARNING) << "Decoder " << video_capability->name()
+                      << " reported bitrate unsupported for " << bitrate
+                      << " bps, but resolution and fps are supported. Allowing.";
     }
 
     // Append ".secure" for secure decoder if not represents.
