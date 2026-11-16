@@ -583,7 +583,11 @@ public class MediaCodecUtil {
   @CalledByNative
   public static Range<Integer> getVideoBitrateRange(
       MediaCodecInfo.VideoCapabilities videoCapabilities) {
-    return videoCapabilities.getBitrateRange();
+    Range<Integer> range = videoCapabilities.getBitrateRange();
+    // In Android TV devices, vendor decoders frequently announce a conservative upper bitrate bound
+    // (e.g. 20-40 Mbps), which causes high-bitrate 2160p (4K) YouTube streams to be filtered out.
+    // Expand the upper bound to Integer.MAX_VALUE to allow 4K playback.
+    return Range.create(range.getLower(), Integer.MAX_VALUE);
   }
 
   @CalledByNative
