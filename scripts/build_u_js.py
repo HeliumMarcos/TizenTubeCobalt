@@ -5,10 +5,26 @@ header = """// TizenTube Cobalt L1 - 4K (2160p) Bitrate Unblocker for TCL C7K
     if (window.__ttL1Patched) return;
     window.__ttL1Patched = true;
 
+    window.__ttShouldHideAv1 = function() {
+        try {
+            var raw = localStorage.getItem('ytaf-configuration');
+            if (!raw) return false;
+            var cfg = JSON.parse(raw);
+            if (!cfg) return false;
+            if (cfg.preferredVideoCodec === 'vp9') return true;
+            if (cfg.maxAv1BitrateMbps && cfg.maxAv1BitrateMbps !== 'unlimited') {
+                var n = Number(cfg.maxAv1BitrateMbps);
+                if (n > 0 && n <= 35) return true;
+            }
+        } catch (_) {}
+        return false;
+    };
+
     if (window.MediaSource && MediaSource.isTypeSupported) {
         const origIsTypeSupported = MediaSource.isTypeSupported.bind(MediaSource);
         MediaSource.isTypeSupported = function(type) {
             if (!type) return false;
+            if (/av01|av1/i.test(type) && window.__ttShouldHideAv1()) return false;
             const clamped = type.replace(/;\\s*bitrate=(\\d+)/gi, function(m, val) {
                 var n = parseInt(val, 10);
                 return (n > 35000000 && n <= 250000000) ? '; bitrate=35000000' : m;
@@ -22,6 +38,9 @@ header = """// TizenTube Cobalt L1 - 4K (2160p) Bitrate Unblocker for TCL C7K
         navigator.mediaCapabilities.decodingInfo = async function(config) {
             try {
                 var cfg = config;
+                if (cfg && cfg.video && /av01|av1/i.test(cfg.video.contentType || '') && window.__ttShouldHideAv1()) {
+                    return { supported: false, smooth: false, powerEfficient: false };
+                }
                 if (cfg && cfg.video && cfg.video.bitrate > 35000000 && cfg.video.bitrate <= 250000000) {
                     cfg = Object.assign({}, cfg, {
                         video: Object.assign({}, cfg.video, { bitrate: 35000000 })
@@ -58,6 +77,11 @@ codec_menu_target = 'options:["any","vp9","av01","avc1"].map(e=>({name:"any"===e
 codec_menu_replacement = codec_menu_target + ',{name:"Limite máximo de bitrate (AV1)",icon:"VIDEO_QUALITY",value:null,menuId:"tt-max-av1-bitrate",menuHeader:{title:"Limite máximo de bitrate (AV1)",subtitle:"Define o teto para AV1 (padrão: 100 Mbps)"},options:["20","30","40","60","100","unlimited"].map(e=>({name:"unlimited"===e?"Sem limite":`${e} Mbps`+("100"===e?" (Padrão)":""),key:"maxAv1BitrateMbps",value:e}))},{name:"Limite máximo de bitrate (VP9/AVC/HEVC)",icon:"VIDEO_QUALITY",value:null,menuId:"tt-max-other-bitrate",menuHeader:{title:"Limite máximo de bitrate (VP9/AVC/HEVC)",subtitle:"Define o teto para VP9, H.264/AVC, H.265/HEVC e outros (padrão: 150 Mbps)"},options:["45","60","80","100","120","150","unlimited"].map(e=>({name:"unlimited"===e?"Sem limite":`${e} Mbps`+("150"===e?" (Padrão)":""),key:"maxOtherBitrateMbps",value:e}))}'
 assert codec_menu_target in code, "codec_menu_target not found in userScript.js"
 code = code.replace(codec_menu_target, codec_menu_replacement, 1)
+
+ia_target = 'function Ia(e,t){console.info("Setting key",e,"to",t),za[e]=t,window.localStorage[Ba]=JSON.stringify(za),Ra.dispatchEvent(new CustomEvent("configChange",{detail:{key:e,value:t}}))}'
+ia_replacement = 'function Ia(e,t){var prevHide=window.__ttShouldHideAv1&&window.__ttShouldHideAv1();console.info("Setting key",e,"to",t),za[e]=t,window.localStorage[Ba]=JSON.stringify(za),Ra.dispatchEvent(new CustomEvent("configChange",{detail:{key:e,value:t}}));if(("maxAv1BitrateMbps"===e||"preferredVideoCodec"===e)&&window.__ttShouldHideAv1&&window.__ttShouldHideAv1()!==prevHide)setTimeout(function(){location.reload()},300)}'
+assert ia_target in code, "ia_target not found in userScript.js"
+code = code.replace(ia_target, ia_replacement, 1)
 
 out_path = r"C:\Users\HeliumMarcos\.gemini\antigravity\scratch\TizenTubeCobalt\u.js"
 with open(out_path, "w", encoding="utf-8") as f:
