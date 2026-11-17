@@ -57,7 +57,9 @@ Baixe o APK oficial da última release publicada a partir da branch `main`:
 
 ---
 
-## 🙏 Créditos
+## 🙏 Créditos e Estrutura do Repositório
 
+- **Branch `main`:** enxuta com apenas os diretórios/arquivos essenciais do projeto (`u.js`, `cobalt/`, `starboard/`, `scripts/`, `docs/`, `.github/` e `README.md`).
+- **Branch `cobalt-full`:** preserva a árvore completa do monorepo Chromium/Cobalt para compilações C++ nativas.
 - Projeto base: [reisxd/TizenTubeCobalt](https://github.com/reisxd/TizenTubeCobalt) e [TizenTube](https://github.com/reisxd/TizenTube)
 - Motor: [Google Cobalt (`27.lts.10`)](https://cobalt.dev)
