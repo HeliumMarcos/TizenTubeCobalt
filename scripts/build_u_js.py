@@ -98,7 +98,7 @@ assert code.count(or_fn_target) == 1, "or_fn_target must match once"
 code = code.replace(or_fn_target, or_fn_replacement, 1)
 
 updater_target = 'https://api.github.com/repos/reisxd/TizenTubeCobalt/releases/latest'
-updater_replacement = 'https://api.github.com/repos/HeliumMarcos/TizenTubeCobalt/releases/latest'
+updater_replacement = 'https://api.github.com/repos/HeliumMarcos/TubeRush/releases/latest'
 assert code.count(updater_target) == 1, "updater_target must match once"
 code = code.replace(updater_target, updater_replacement, 1)
 
@@ -205,6 +205,7 @@ exp_stage1 = r"""
   // 3. Patch ytcfg EXPERIMENT_FLAGS & WEB_PLAYER_CONTEXT_CONFIGS for official Proxima/ULL & fast startup
   var EXP_FLAG_OVERRIDES = {
     html5_enable_proxima: 'true',
+    html5_sabr_force_proxima: 'true',
     html5_sabr_live_ultra_low_latency_streaming_xhr: 'true',
     html5_sabr_live_low_latency_streaming_xhr: 'true',
     html5_ultra_low_latency_subsegment_readahead: 'true',
@@ -262,8 +263,9 @@ exp_stage1 = r"""
     } catch (_) {}
   }
 
-  try {
-    if (window.ytcfg) {
+  function hookYtcfg() {
+    try {
+      if (!window.ytcfg) return false;
       if (window.ytcfg.data_) applyYtcfgPatches(window.ytcfg.data_);
       if (typeof window.ytcfg.set === 'function' && !window.ytcfg.__ttExpWrapped) {
         var origYtcfgSet = window.ytcfg.set;
@@ -277,8 +279,19 @@ exp_stage1 = r"""
         };
         window.ytcfg.__ttExpWrapped = true;
       }
+      return !!window.ytcfg.__ttExpWrapped;
+    } catch (_) {
+      return false;
     }
-  } catch (_) {}
+  }
+
+  if (!hookYtcfg()) {
+    var ytcfgPollCount = 0;
+    var ytcfgPoll = setInterval(function () {
+      ytcfgPollCount++;
+      if (hookYtcfg() || ytcfgPollCount >= 100) clearInterval(ytcfgPoll);
+    }, 100);
+  }
 
   // 4. Hook both JSON.parse and Response.prototype.json to tune live playerConfig & preconnect media CDN
   function patchParsedPayload(res) {
@@ -334,6 +347,7 @@ exp_stage1 = r"""
   var hookedVideo = null;
   var lastRebufferAt = 0;
   var lastVideoSwitchAt = 0;
+  var lastSeekJumpAt = 0;
   var weChangedRate = false;
   var lastTimeUpdateTime = 0;
   var manualDvrHold = false;
@@ -474,10 +488,20 @@ exp_stage1 = r"""
 
     var st = null;
     try { st = p.getStatsForNerds && p.getStatsForNerds(); } catch (_) {}
-    if (!st) return;
 
-    var ll = parseNumeric(st.live_latency_secs || st.live_latency_seconds, st.live_latency_samples);
-    var bh = parseNumeric(st.buffer_health_seconds, st.buffer_health_samples);
+    var ll = st ? parseNumeric(st.live_latency_secs || st.live_latency_seconds, st.live_latency_samples) : NaN;
+    var bh = st ? parseNumeric(st.buffer_health_seconds, st.buffer_health_samples) : NaN;
+    if (!isFinite(ll) || !isFinite(bh)) {
+      try {
+        if (typeof p.getDebugText === 'function') {
+          var dbgMetrics = safeParseJson(p.getDebugText(true));
+          if (dbgMetrics) {
+            if (!isFinite(ll)) ll = parseNumeric(dbgMetrics.rawlivelatency || dbgMetrics.livelatency);
+            if (!isFinite(bh)) bh = parseNumeric(dbgMetrics.vbu || dbgMetrics.bufferhealth);
+          }
+        }
+      } catch (_) {}
+    }
     state.lastLl = isFinite(ll) ? Math.round(ll * 100) / 100 : null;
     state.lastBh = isFinite(bh) ? Math.round(bh * 100) / 100 : null;
 
@@ -513,6 +537,13 @@ exp_stage1 = r"""
 
     if (headroom <= 0.05) {
       restoreBaseRate(v, 'low-buffer-guard');
+      return;
+    }
+
+    if (ll > 18 && isHead && !manualDvrHold && bh >= entryBh && Date.now() - lastSeekJumpAt > 45000 && typeof p.seekTo === 'function') {
+      lastSeekJumpAt = Date.now();
+      restoreBaseRate(v, 'seek-live-head');
+      try { p.seekTo(Infinity, true); } catch (_) {}
       return;
     }
 
