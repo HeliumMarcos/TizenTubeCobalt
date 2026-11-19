@@ -107,6 +107,9 @@ tag_replacement = 'r=n.tag_name.replace(/^v/,"").split("-")[0]'
 assert code.count(tag_target) == 1, "tag_target must match once"
 code = code.replace(tag_target, tag_replacement, 1)
 
+code = code.replace('https://github.com/reisxd/TizenTube', 'https://github.com/HeliumMarcos/TubeRush')
+code = code.replace('TizenTube', 'TubeRush').replace('reisxd', 'L1')
+
 exp_stage1 = r"""
 /* === TizenTube E1 (exp/low-latency) Stage 1: Proxima/ULL + Preconnect + Live Auto-Catch-Up === */
 (function () {
