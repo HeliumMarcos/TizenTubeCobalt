@@ -1,7 +1,7 @@
 # 🚀 TubeRush — TCL C7K 4K60 HDR & Low-Latency Edition
 
 <p align="center">
-    <img width="600px" src=".github/assets/TizenTube Cobalt Banner.png">
+    <img width="860px" src=".github/assets/TubeRush%20Banner.png">
     <br>
 </p>
 
