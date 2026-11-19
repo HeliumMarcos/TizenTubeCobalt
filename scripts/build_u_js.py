@@ -102,6 +102,11 @@ updater_replacement = 'https://api.github.com/repos/HeliumMarcos/TizenTubeCobalt
 assert code.count(updater_target) == 1, "updater_target must match once"
 code = code.replace(updater_target, updater_replacement, 1)
 
+tag_target = 'r=n.tag_name.replace("v","")'
+tag_replacement = 'r=n.tag_name.replace(/^v/,"").split("-")[0]'
+assert code.count(tag_target) == 1, "tag_target must match once"
+code = code.replace(tag_target, tag_replacement, 1)
+
 exp_stage1 = r"""
 /* === TizenTube E1 (exp/low-latency) Stage 1: Proxima/ULL + Preconnect + Live Auto-Catch-Up === */
 (function () {
