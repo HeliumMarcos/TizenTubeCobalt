@@ -270,7 +270,20 @@
             if (command && command.customAction && command.customAction.action==='TT_QUALITY_SELECT') {
               var args=command.customAction.parameters || {};
               var ok=select(args.videoId,args.id);
-              if (ok) { try { original.call(this,{signalAction:{signal:'POPUP_BACK'}}); } catch (_) {} }
+              if (ok) {
+                try { original.call(this,{signalAction:{signal:'POPUP_BACK'}}); } catch (_) {}
+                try {
+                  if (root.setTimeout && root.document && typeof root.KeyboardEvent==='function') {
+                    root.setTimeout(function () {
+                      try {
+                        var target=root.document.activeElement || root.document.body || root.document;
+                        target.dispatchEvent(new root.KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true,cancelable:true}));
+                        target.dispatchEvent(new root.KeyboardEvent('keyup',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true,cancelable:true}));
+                      } catch (_) {}
+                    }, 0);
+                  }
+                } catch (_) {}
+              }
               return ok;
             }
             var callArgs=Array.from(arguments);
