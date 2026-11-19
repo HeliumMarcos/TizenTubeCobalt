@@ -402,16 +402,39 @@
               var args=command.customAction.parameters || {};
               var ok=select(args.videoId,args.id);
               if (ok) {
-                try { original.call(this,{signalAction:{signal:'POPUP_BACK'}}); } catch (_) {}
                 try {
-                  if (root.setTimeout && root.document && typeof root.KeyboardEvent==='function') {
+                  if (root.document) {
+                    var listEl=root.document.querySelector('ytlr-overlay-panel-item-list-renderer, [unique-id="quality-selector"]');
+                    if (listEl) {
+                      var items=listEl.querySelectorAll('ytlr-compact-link-renderer');
+                      var focusedItem=listEl.querySelector('ytlr-compact-link-renderer[focused], ytlr-compact-link-renderer.focused');
+                      var checkSvg=null;
+                      items.forEach(function (el) {
+                        var icon=el.querySelector('.secondary-icon, [id*="secondary"], yt-icon.secondary-icon, svg');
+                        if (!checkSvg && icon && icon.closest && icon.closest('ytlr-compact-link-renderer')===el) {
+                          var icons=el.querySelectorAll('yt-icon, .yt-icon-shape, svg');
+                          if (icons.length) checkSvg=icons[icons.length-1];
+                        }
+                      });
+                      if (focusedItem && items.length) {
+                        items.forEach(function (el) {
+                          var icons=el.querySelectorAll('yt-icon');
+                          if (icons.length) {
+                            var last=icons[icons.length-1];
+                            if (el===focusedItem) last.style.visibility='visible';
+                            else if (last!==icons[0] || el.textContent.indexOf('Autom')>=0) last.style.visibility='hidden';
+                          }
+                        });
+                      }
+                    }
+                  }
+                } catch (_) {}
+                try { original.call(owner,{signalAction:{signal:'POPUP_BACK'}}); } catch (_) {}
+                try {
+                  if (root.setTimeout) {
                     root.setTimeout(function () {
-                      try {
-                        var target=root.document.activeElement || root.document.body || root.document;
-                        target.dispatchEvent(new root.KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true,cancelable:true}));
-                        target.dispatchEvent(new root.KeyboardEvent('keyup',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true,cancelable:true}));
-                      } catch (_) {}
-                    }, 0);
+                      try { original.call(owner,{signalAction:{signal:'POPUP_BACK'}}); } catch (_) {}
+                    }, 50);
                   }
                 } catch (_) {}
               }
