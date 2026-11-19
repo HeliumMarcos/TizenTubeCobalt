@@ -928,6 +928,25 @@ class MediaCodecBridge {
     }
   }
 
+  private static void maybeEnableLowLatency(MediaCodec codec, MediaFormat format) {
+    try {
+      if (Build.VERSION.SDK_INT < 30 || codec == null || format == null) {
+        return;
+      }
+      String mime = format.getString(MediaFormat.KEY_MIME);
+      if (mime == null) {
+        return;
+      }
+      MediaCodecInfo.CodecCapabilities caps = codec.getCodecInfo().getCapabilitiesForType(mime);
+      if (caps != null
+          && caps.isFeatureSupported(MediaCodecInfo.CodecCapabilities.FEATURE_LowLatency)) {
+        format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
+      }
+    } catch (Throwable t) {
+      Log.w(TAG, "KEY_LOW_LATENCY skipped: ", t);
+    }
+  }
+
   private boolean configureVideo(
       MediaFormat format,
       Surface surface,
@@ -953,6 +972,7 @@ class MediaCodecBridge {
       }
 
       maybeSetMaxVideoInputSize(format);
+      maybeEnableLowLatency(mMediaCodec.get(), format);
       mMediaCodec.get().configure(format, surface, crypto, flags);
       return true;
     } catch (IllegalArgumentException e) {

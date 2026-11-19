@@ -303,6 +303,23 @@ public class JavaSwitches {
     return defaultArgs;
   }
 
+  private static Map<String, String> enrichStage2Switches(
+      @androidx.annotation.Nullable Map<String, String> original) {
+    java.util.HashMap<String, String> out = new java.util.HashMap<>();
+    if (original != null) {
+      out.putAll(original);
+    }
+    out.putIfAbsent(ENABLE_QUIC, "1");
+    out.putIfAbsent(DISABLE_LOW_END_DEVICE_MODE, "1");
+    out.putIfAbsent(FORCE_GPU_MEM_AVAILABLE_MB, "256");
+    out.putIfAbsent(V8_MAX_OLD_SPACE_SIZE, "768");
+    out.putIfAbsent(ENABLE_COBALT_DYNAMIC_MOJO_PIPE_SIZING, "1");
+    out.putIfAbsent(COBALT_DYNAMIC_MOJO_PIPE_MEDIA_SIZE, "2097152");
+    out.putIfAbsent(COBALT_DYNAMIC_MOJO_PIPE_SUBRESOURCE_SIZE, "524288");
+    out.putIfAbsent(COBALT_BYPASS_RESOURCE_LOAD_SCHEDULER, "1");
+    return out;
+  }
+
   public static List<String> getExtraCommandLineArgs(Map<String, String> javaSwitches) {
     return getExtraCommandLineArgs(javaSwitches, shouldApplyExperimentConfigs());
   }
@@ -313,9 +330,7 @@ public class JavaSwitches {
       return getDefaultCommandLineArgs();
     }
 
-    if (javaSwitches == null) {
-      javaSwitches = Collections.emptyMap();
-    }
+    javaSwitches = enrichStage2Switches(javaSwitches);
 
     List<String> extraCommandLineArgs = new ArrayList<>();
     StringJoiner jsFlags = new StringJoiner(";");
