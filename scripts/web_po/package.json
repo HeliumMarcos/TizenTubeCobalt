@@ -1,0 +1,8 @@
+{
+  "name": "tizentube-web-po-build",
+  "private": true,
+  "type": "module",
+  "scripts": {"build": "node build.mjs"},
+  "dependencies": {"bgutils-js": "4.0.3"},
+  "devDependencies": {"esbuild": "0.25.12"}
+}

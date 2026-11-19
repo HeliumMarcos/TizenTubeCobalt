@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8"><pre id="result">pending</pre><div id="host"></div>
+<script src="../l1/src/bitrate-policy.js"></script><script src="../quality_formats.js"></script><script>
+(async()=>{const failures=[],checks=[];function assert(v,label){checks.push(label);if(!v)failures.push(label)}
+try{
+ const host=document.getElementById('host'),player={getVideoData:()=>({video_id:'MNsbPClRgyg'}),getStatsForNerds:()=>({codecs:''})};
+ let calls=0;const service={resolveCommand:c=>{calls++;const list=c.openPopupAction.popup.overlaySectionRenderer.overlay.overlayTwoPanelRenderer.actionPanel.overlayPanelRenderer.content.overlayPanelItemListRenderer;
+ host.replaceChildren();list.items.forEach(item=>{const b=document.createElement('button');const r=item.compactLinkRenderer,t=document.createElement('span'),sub=document.createElement('span');t.textContent=r.title.simpleText;if(r.subtitle)sub.textContent=r.subtitle.simpleText;b.append(t,sub);host.append(b)});host.firstChild.focus();return true}};
+ const root={document:{getElementById:id=>id==='movie_player'?player:document.getElementById(id),querySelector:s=>s==='video'?null:player},localStorage:{getItem:()=>JSON.stringify({maxAv1BitrateMbps:'20'})},MediaSource:{isTypeSupported:()=>true},_yttv:{test:{instance:service}},setTimeout:setTimeout,clearTimeout:clearTimeout};
+ const ctl=TTQualityFormats.create(root);ctl.apply({videoDetails:{videoId:'MNsbPClRgyg'},streamingData:{adaptiveFormats:[{itag:701,mimeType:'video/mp4; codecs="av01"',height:2160,fps:60,qualityLabel:'2160p60 HDR',averageBitrate:27970000}]}});ctl.installMenu();
+ function command(){return {openPopupAction:{uniqueId:'quality-selector',popup:{overlaySectionRenderer:{overlay:{overlayTwoPanelRenderer:{actionPanel:{overlayPanelRenderer:{content:{overlayPanelItemListRenderer:{items:[],selectedIndex:0}}}},backButton:{keep:true}}}}}}}}
+ for(let n=0;n<100;n++){
+ const c=command();service.resolveCommand(c);const focused=document.activeElement,track=host.children[1];
+ assert(calls===n+1&&track.firstChild.textContent==='2160p\u2002HDR\u200260 fps'&&track.lastChild.textContent==='AV1\u200227,97 Mbps\u2002Limite 20 Mbps','complete final metadata in the only dispatch '+n);
+ await Promise.resolve();await Promise.resolve();assert(host.children[1]===track&&document.activeElement===focused&&!document.getElementById('tt-quality-clean-style'),'no delayed restyle/list replacement/focus change '+n);
+ assert(c.openPopupAction.popup.overlaySectionRenderer.overlay.overlayTwoPanelRenderer.actionPanel.overlayPanelRenderer.content.overlayPanelItemListRenderer.items.length===0,'original native command untouched '+n);
+ host.replaceChildren();
+ }
+ ctl.dispose();assert(ctl.getMenuDiagnostics().enriched===100,'all100 enriched opens accounted for');
+}catch(e){failures.push(e.message)}document.getElementById('result').textContent=JSON.stringify({checks:checks.length,failures});})();
+</script>

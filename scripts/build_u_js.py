@@ -1,80 +1,84 @@
 import os
+import argparse
+from pathlib import Path
 
-header = """// TizenTube Cobalt L1 - 4K (2160p) Bitrate Unblocker for TCL C7K
+repo_root = Path(__file__).resolve().parent.parent
+parser = argparse.ArgumentParser(description="Build the main or experimental userscript")
+parser.add_argument("--source", type=Path, default=repo_root.parent / "userScript.js")
+parser.add_argument("--output", type=Path, default=repo_root / "u.js")
+parser.add_argument("--variant", choices=("main", "experimental"), required=True,
+                    help="Explicitly select the variant to keep experimental live code out of main")
+args = parser.parse_args()
+
+header = """// TizenTube Cobalt L1 - honest per-format capability and bitrate policy
 (function() {
     if (window.__ttL1Patched) return;
     window.__ttL1Patched = true;
-
-    window.__ttShouldHideAv1 = function() {
-        try {
-            var raw = localStorage.getItem('ytaf-configuration');
-            if (!raw) return false;
-            var cfg = JSON.parse(raw);
-            if (!cfg) return false;
-            if (cfg.preferredVideoCodec === 'vp9') return true;
-            if (cfg.maxAv1BitrateMbps && cfg.maxAv1BitrateMbps !== 'unlimited') {
-                var n = Number(cfg.maxAv1BitrateMbps);
-                if (n > 0 && n <= 35) return true;
-            }
-        } catch (_) {}
-        return false;
-    };
-
-    if (window.MediaSource && MediaSource.isTypeSupported) {
-        const origIsTypeSupported = MediaSource.isTypeSupported.bind(MediaSource);
-        MediaSource.isTypeSupported = function(type) {
-            if (!type) return false;
-            if (/av01|av1/i.test(type) && window.__ttShouldHideAv1()) return false;
-            const clamped = type.replace(/;\\s*bitrate=(\\d+)/gi, function(m, val) {
-                var n = parseInt(val, 10);
-                return (n > 35000000 && n <= 250000000) ? '; bitrate=35000000' : m;
-            });
-            return origIsTypeSupported(clamped);
+    // Do not hide AV1 globally; clamp synthetic VBR peak probes (35M..250M) and normalize vp9.2 alias.
+    window.__ttShouldHideAv1 = function() { return false; };
+    function normalizeMime(mime) {
+        if (typeof mime !== 'string') return mime;
+        return mime.replace(/\\bvp9\\.2\\b/gi, 'vp09.02.51.10.01.09.16.09.00');
+    }
+    function clampPeakMime(mime) {
+        if (typeof mime !== 'string') return mime;
+        return normalizeMime(mime).replace(/;\\s*bitrate=(\\d+)/gi, function(match, p1) {
+            var n = parseInt(p1, 10);
+            return (n > 35000000 && n <= 250000000) ? '; bitrate=35000000' : match;
+        });
+    }
+    if (window.MediaSource && typeof MediaSource.isTypeSupported === 'function') {
+        var origIsTypeSupported = MediaSource.isTypeSupported.bind(MediaSource);
+        MediaSource.isTypeSupported = function(mime) {
+            return origIsTypeSupported(clampPeakMime(mime));
+        };
+        if (MediaSource.prototype && typeof MediaSource.prototype.addSourceBuffer === 'function') {
+            var origAddSourceBuffer = MediaSource.prototype.addSourceBuffer;
+            MediaSource.prototype.addSourceBuffer = function(mime) {
+                return origAddSourceBuffer.call(this, normalizeMime(mime));
+            };
+        }
+    }
+    if (window.SourceBuffer && SourceBuffer.prototype && typeof SourceBuffer.prototype.changeType === 'function') {
+        var origChangeType = SourceBuffer.prototype.changeType;
+        SourceBuffer.prototype.changeType = function(mime) {
+            return origChangeType.call(this, normalizeMime(mime));
         };
     }
-
-    if (navigator.mediaCapabilities && navigator.mediaCapabilities.decodingInfo) {
-        const origDecodingInfo = navigator.mediaCapabilities.decodingInfo.bind(navigator.mediaCapabilities);
-        navigator.mediaCapabilities.decodingInfo = async function(config) {
-            try {
-                var cfg = config;
-                if (cfg && cfg.video && /av01|av1/i.test(cfg.video.contentType || '') && window.__ttShouldHideAv1()) {
-                    return { supported: false, smooth: false, powerEfficient: false };
+    if (window.navigator && navigator.mediaCapabilities && typeof navigator.mediaCapabilities.decodingInfo === 'function') {
+        var origDecodingInfo = navigator.mediaCapabilities.decodingInfo.bind(navigator.mediaCapabilities);
+        navigator.mediaCapabilities.decodingInfo = function(cfg) {
+            var q = cfg;
+            if (cfg && cfg.video && typeof cfg.video === 'object') {
+                var ct = typeof cfg.video.contentType === 'string' ? clampPeakMime(cfg.video.contentType) : cfg.video.contentType;
+                var br = typeof cfg.video.bitrate === 'number' && cfg.video.bitrate > 35000000 && cfg.video.bitrate <= 250000000 ? 35000000 : cfg.video.bitrate;
+                if (ct !== cfg.video.contentType || br !== cfg.video.bitrate) {
+                    q = Object.assign({}, cfg, {video: Object.assign({}, cfg.video, {contentType: ct, bitrate: br})});
                 }
-                if (cfg && cfg.video && cfg.video.bitrate > 35000000 && cfg.video.bitrate <= 250000000) {
-                    cfg = Object.assign({}, cfg, {
-                        video: Object.assign({}, cfg.video, { bitrate: 35000000 })
-                    });
-                }
-                const res = await origDecodingInfo(cfg);
-                if (!res || !res.supported) return res;
-                return {
-                    supported: true,
-                    smooth: true,
-                    powerEfficient: true,
-                    keySystemAccess: res.keySystemAccess || null
-                };
-            } catch (e) {
-                return origDecodingInfo(config);
             }
+            return origDecodingInfo(q);
         };
     }
 })();
 """
 
-user_script_path = r"C:\Users\HeliumMarcos\.gemini\antigravity\scratch\userScript.js"
+user_script_path = args.source
 with open(user_script_path, "r", encoding="utf-8") as f:
     code = f.read()
 
 target_str = 'null!=e&&null!==(i=e.streamingData)&&void 0!==i&&i.adaptiveFormats&&"any"!==Ma("preferredVideoCodec")){var S=Ma("preferredVideoCodec");e.streamingData.adaptiveFormats.find(e=>e.mimeType.includes(S))&&(e.streamingData.adaptiveFormats=e.streamingData.adaptiveFormats.filter(e=>!!e.mimeType.startsWith("audio/")||e.mimeType.includes(S)))}'
 
-replacement_str = '''null!=e&&null!==(i=e.streamingData)&&void 0!==i&&i.adaptiveFormats){try{var prefCodec=Ma("preferredVideoCodec")||Ma("videoPreferredCodec")||"any",af=e.streamingData.adaptiveFormats,audioFmts=[],videoFmts=[];for(var idx=0;idx<af.length;idx++){var f=af[idx];if(f&&f.mimeType&&f.mimeType.startsWith("video/"))videoFmts.push(f);else audioFmts.push(f)}if(videoFmts.length>0){var av1Raw=String(Ma("maxAv1BitrateMbps")||"100"),othRaw=String(Ma("maxOtherBitrateMbps")||"150"),av1Cap="unlimited"===av1Raw?Infinity:((Number(av1Raw)>0?Number(av1Raw):100)*1000000),otherCap="unlimited"===othRaw?Infinity:((Number(othRaw)>0?Number(othRaw):150)*1000000),isAv1Mime=function(m){return m.includes("av01")||m.includes("av1")},isHwCodecOk=function(f){if(f.height&&f.height>2160)return!1;if(f.width&&f.width>3840)return!1;if(f.fps&&f.fps>60)return!1;if(f.mimeType&&f.mimeType.includes("codecs=")&&window.MediaSource&&MediaSource.isTypeSupported){try{if(!MediaSource.isTypeSupported(f.mimeType))return!1}catch(_){}}return!0},isBitrateOk=function(f){var m=(f.mimeType||"").toLowerCase(),avg=f.averageBitrate||0,peak=f.bitrate||0,br=avg>0?avg:peak,cap=isAv1Mime(m)?av1Cap:otherCap,peakCap=isFinite(cap)?Math.max(Math.round(cap*3.5),160000000):Infinity;return br<=cap&&(!peak||peak<=peakCap)},validVideos=videoFmts.filter(function(f){return isHwCodecOk(f)&&isBitrateOk(f)});if("any"!==prefCodec&&validVideos.length>0){var prefMatches=validVideos.filter(function(f){return f.mimeType&&f.mimeType.includes(prefCodec)});if(prefMatches.length>0){var coveredHeights={};for(var ph=0;ph<prefMatches.length;ph++)coveredHeights[prefMatches[ph].height||0]=!0;var extras=validVideos.filter(function(f){return(!f.mimeType||!f.mimeType.includes(prefCodec))&&!coveredHeights[f.height||0]});validVideos=prefMatches.concat(extras)}}if(validVideos.length>0){var maxValidH=0,maxAv1H=0,hasNonAv1AtMax=!1;for(var vh=0;vh<validVideos.length;vh++){var vf=validVideos[vh],h=vf.height||0,vm=(vf.mimeType||"").toLowerCase();if(h>maxValidH)maxValidH=h;if(isAv1Mime(vm)&&h>maxAv1H)maxAv1H=h}for(var vh2=0;vh2<validVideos.length;vh2++){var vf2=validVideos[vh2],vm2=(vf2.mimeType||"").toLowerCase();if((vf2.height||0)===maxValidH&&!isAv1Mime(vm2)){hasNonAv1AtMax=!0;break}}if(maxValidH>0&&maxAv1H<maxValidH&&hasNonAv1AtMax){var nonAv1Ladder=validVideos.filter(function(f){return!isAv1Mime((f.mimeType||"").toLowerCase())});if(nonAv1Ladder.length>0)validVideos=nonAv1Ladder}}if(!validVideos.length){var safeFallback=videoFmts.filter(function(f){var m=(f.mimeType||"").toLowerCase();return(!isAv1Mime(m)||isBitrateOk(f))&&isHwCodecOk(f)});if(safeFallback.length)validVideos=safeFallback;else{var sorted=videoFmts.slice().sort(function(a,b){var ba=(a.averageBitrate||0)>0?a.averageBitrate:(a.bitrate||0),bb=(b.averageBitrate||0)>0?b.averageBitrate:(b.bitrate||0);return ba-bb});validVideos=[sorted[0]]}}e.streamingData.adaptiveFormats=audioFmts.concat(validVideos)}}catch(err){console.warn("[C7K Bitrate] Error:",err)}}'''
-
+replacement_str = 'null!=e&&e.streamingData&&Array.isArray(e.streamingData.adaptiveFormats)){try{if(window.__ttVp9Fallback)window.__ttVp9Fallback.apply(e);if(window.__ttQualityController)window.__ttQualityController.apply(e)}catch(err){console.warn("[TizenTube Quality] Format filtering failed")}}'
+assert code.count(target_str) == 1, "codec hook must match exactly once"
 code = code.replace(target_str, replacement_str, 1)
-code = code.replace('preferredVideoQuality:"auto"', 'preferredVideoQuality:"2160p",maxAv1BitrateMbps:"100",maxOtherBitrateMbps:"150"', 1)
+quality_action_target = 'function ho(e,t){switch(e){'
+assert code.count(quality_action_target) == 1, "custom action dispatcher must match once"
+code = code.replace(quality_action_target, quality_action_target + 'case"TT_QUALITY_SELECT":if(window.__ttQualityController)window.__ttQualityController.select(t.videoId,t.id);break;', 1)
+
+code = code.replace('preferredVideoQuality:"auto"', 'preferredVideoQuality:"2160p",maxAv1BitrateMbps:"40",maxOtherBitrateMbps:"100"', 1)
 
 codec_menu_target = 'options:["any","vp9","av01","avc1"].map(e=>({name:"any"===e?ga("settings.options.videoPlayer.options.codecAny"):e.toUpperCase(),key:"preferredVideoCodec",value:e}))}'
-codec_menu_replacement = codec_menu_target + ',{name:"Limite máximo de bitrate (AV1)",icon:"VIDEO_QUALITY",value:null,menuId:"tt-max-av1-bitrate",menuHeader:{title:"Limite máximo de bitrate (AV1)",subtitle:"Define o teto para AV1 (padrão: 100 Mbps)"},options:["20","30","40","60","100","unlimited"].map(e=>({name:"unlimited"===e?"Sem limite":`${e} Mbps`+("100"===e?" (Padrão)":""),key:"maxAv1BitrateMbps",value:e}))},{name:"Limite máximo de bitrate (VP9/AVC/HEVC)",icon:"VIDEO_QUALITY",value:null,menuId:"tt-max-other-bitrate",menuHeader:{title:"Limite máximo de bitrate (VP9/AVC/HEVC)",subtitle:"Define o teto para VP9, H.264/AVC, H.265/HEVC e outros (padrão: 150 Mbps)"},options:["45","60","80","100","120","150","unlimited"].map(e=>({name:"unlimited"===e?"Sem limite":`${e} Mbps`+("150"===e?" (Padrão)":""),key:"maxOtherBitrateMbps",value:e}))}'
+codec_menu_replacement = codec_menu_target + ',{name:"Limite máximo de bitrate (AV1)",icon:"VIDEO_QUALITY",value:null,menuId:"tt-max-av1-bitrate",menuHeader:{title:"Limite máximo de bitrate (AV1)",subtitle:"Define o teto para AV1 (padrão: 40 Mbps)"},options:["20","30","40","60","100","unlimited"].map(e=>({name:"unlimited"===e?"Sem limite":`${e} Mbps`+("40"===e?" (Padrão)":""),key:"maxAv1BitrateMbps",value:e}))},{name:"Limite máximo de bitrate (VP9/AVC/HEVC)",icon:"VIDEO_QUALITY",value:null,menuId:"tt-max-other-bitrate",menuHeader:{title:"Limite máximo de bitrate (VP9/AVC/HEVC)",subtitle:"Define o teto para VP9, H.264/AVC, H.265/HEVC e outros (padrão: 100 Mbps)"},options:["45","60","80","100","120","150","unlimited"].map(e=>({name:"unlimited"===e?"Sem limite":`${e} Mbps`+("100"===e?" (Padrão)":""),key:"maxOtherBitrateMbps",value:e}))}'
 assert codec_menu_target in code, "codec_menu_target not found in userScript.js"
 code = code.replace(codec_menu_target, codec_menu_replacement, 1)
 
@@ -83,8 +87,475 @@ ia_replacement = 'function Ia(e,t){var prevHide=window.__ttShouldHideAv1&&window
 assert ia_target in code, "ia_target not found in userScript.js"
 code = code.replace(ia_target, ia_replacement, 1)
 
-out_path = r"C:\Users\HeliumMarcos\.gemini\antigravity\scratch\TizenTubeCobalt\u.js"
-with open(out_path, "w", encoding="utf-8") as f:
-    f.write(header + "\n" + code)
+or_reset_target = 'null==a||!a.isPlaying||p(Dr,this)||s||(l(Er,this,Or).call(this),m(Dr,this,!0))'
+or_reset_replacement = 'null==a||!a.isPlaying?m(Dr,this,!1):p(Dr,this)||s||(l(Er,this,Or).call(this),m(Dr,this,!0))'
+assert code.count(or_reset_target) == 1, "or_reset_target must match once"
+code = code.replace(or_reset_target, or_reset_replacement, 1)
+
+or_fn_target = 'function Or(){var e=Ma(wr);'
+or_fn_replacement = 'function Or(){if(window.__ttQualityController&&window.__ttQualityController.getSelection&&window.__ttQualityController.getSelection()){window.__ttQualityController.applySelectedQuality();return}var e=Ma(wr);'
+assert code.count(or_fn_target) == 1, "or_fn_target must match once"
+code = code.replace(or_fn_target, or_fn_replacement, 1)
+
+updater_target = 'https://api.github.com/repos/reisxd/TizenTubeCobalt/releases/latest'
+updater_replacement = 'https://api.github.com/repos/HeliumMarcos/TizenTubeCobalt/releases/latest'
+assert code.count(updater_target) == 1, "updater_target must match once"
+code = code.replace(updater_target, updater_replacement, 1)
+
+exp_stage1 = r"""
+/* === TizenTube E1 (exp/low-latency) Stage 1: Proxima/ULL + Preconnect + Live Auto-Catch-Up === */
+(function () {
+  'use strict';
+  if (window.__ttExpStage1Loaded) return;
+  window.__ttExpStage1Loaded = true;
+
+  var state = window.__ttExpStage1 = {
+    version: 'exp-stage1-v1',
+    patchedResponses: 0,
+    preconnectHosts: [],
+    catchupActive: false,
+    catchupActivations: 0,
+    rebufferBackoffs: 0,
+    lastVideoId: null,
+    lastLatencyClass: null,
+    lastSegDur: null,
+    lastLl: null,
+    lastBh: null,
+    lastRate: 1,
+    lastReason: 'init'
+  };
+
+  function safeParseJson(str) {
+    try { return JSON.parse(str); } catch (_) { return null; }
+  }
+
+  function getBaseSpeed() {
+    try {
+      var raw = localStorage.getItem('ytaf-configuration');
+      if (raw) {
+        var cfg = JSON.parse(raw);
+        if (cfg && typeof cfg.videoSpeed === 'number' && isFinite(cfg.videoSpeed) && cfg.videoSpeed > 0) {
+          return cfg.videoSpeed;
+        }
+      }
+    } catch (_) {}
+    return 1;
+  }
+
+  function isDefaultSpeed(spd) {
+    return Math.abs(spd - 1) <= 0.0005;
+  }
+
+  // 1. Seed Proxima ULL preference & initial bandwidth floor on cold start
+  try {
+    var now = Date.now();
+    if (!localStorage.getItem('yt-player-proxima-pref')) {
+      localStorage.setItem('yt-player-proxima-pref', JSON.stringify({
+        data: '1',
+        expiration: now + 31536000000,
+        creation: now
+      }));
+    }
+    var rawBw = localStorage.getItem('yt-player-bandwidth');
+    var needSeedBw = !rawBw;
+    if (rawBw) {
+      var outerBw = safeParseJson(rawBw);
+      var innerBw = outerBw && typeof outerBw.data === 'string' ? safeParseJson(outerBw.data) : null;
+      if (!innerBw || typeof innerBw.byterate !== 'number' || innerBw.byterate < 3000000) {
+        needSeedBw = true;
+      }
+    }
+    if (needSeedBw) {
+      localStorage.setItem('yt-player-bandwidth', JSON.stringify({
+        data: JSON.stringify({ delay: 0.12, stall: 0, byterate: 6250000 }),
+        expiration: now + 2592000000,
+        creation: now
+      }));
+    }
+  } catch (_) {}
+
+  // 2. Non-blocking <link rel="preconnect"> helper
+  var preconnected = Object.create(null);
+  function addPreconnect(origin) {
+    try {
+      if (!origin || preconnected[origin] || state.preconnectHosts.length >= 8) return;
+      preconnected[origin] = true;
+      state.preconnectHosts.push(origin);
+      var head = document.head || document.documentElement;
+      if (!head) return;
+      var link = document.createElement('link');
+      link.rel = 'preconnect';
+      link.href = origin;
+      link.crossOrigin = 'anonymous';
+      head.appendChild(link);
+    } catch (_) {}
+  }
+
+  var scheduleIdle = window.requestIdleCallback || function (fn) { return setTimeout(fn, 60); };
+  scheduleIdle(function () {
+    addPreconnect('https://youtubei.googleapis.com');
+    addPreconnect('https://i.ytimg.com');
+  });
+
+  // 3. Patch ytcfg EXPERIMENT_FLAGS & WEB_PLAYER_CONTEXT_CONFIGS for official Proxima/ULL & fast startup
+  var EXP_FLAG_OVERRIDES = {
+    html5_enable_proxima: 'true',
+    html5_sabr_live_ultra_low_latency_streaming_xhr: 'true',
+    html5_sabr_live_low_latency_streaming_xhr: 'true',
+    html5_ultra_low_latency_subsegment_readahead: 'true',
+    html5_live_chunk_readahead_proxima_override: '1',
+    html5_liveness_drift_proxima_override: '2',
+    html5_min_startup_buffered_media_duration_secs: '0.6',
+    html5_min_startup_buffered_media_duration_for_live_secs: '0.0',
+    html5_min_startup_duration_live_secs: '0.25'
+  };
+
+  function patchSerializedFlags(serialized) {
+    if (typeof serialized !== 'string' || !serialized) return serialized;
+    var parts = serialized.split('&');
+    var seen = Object.create(null);
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      if (!p) continue;
+      var eq = p.indexOf('=');
+      var k = eq >= 0 ? p.slice(0, eq) : p;
+      if (Object.prototype.hasOwnProperty.call(EXP_FLAG_OVERRIDES, k)) {
+        out.push(k + '=' + EXP_FLAG_OVERRIDES[k]);
+        seen[k] = true;
+      } else {
+        out.push(p);
+      }
+    }
+    for (var ok in EXP_FLAG_OVERRIDES) {
+      if (Object.prototype.hasOwnProperty.call(EXP_FLAG_OVERRIDES, ok) && !seen[ok]) {
+        out.push(ok + '=' + EXP_FLAG_OVERRIDES[ok]);
+      }
+    }
+    return out.join('&');
+  }
+
+  function applyYtcfgPatches(obj) {
+    if (!obj || typeof obj !== 'object') return;
+    try {
+      if (obj.EXPERIMENT_FLAGS && typeof obj.EXPERIMENT_FLAGS === 'object') {
+        for (var k in EXP_FLAG_OVERRIDES) {
+          if (Object.prototype.hasOwnProperty.call(EXP_FLAG_OVERRIDES, k)) {
+            var val = EXP_FLAG_OVERRIDES[k];
+            obj.EXPERIMENT_FLAGS[k] = val === 'true' ? true : (val === 'false' ? false : Number(val));
+          }
+        }
+      }
+      var wpcc = obj.WEB_PLAYER_CONTEXT_CONFIGS;
+      if (wpcc && typeof wpcc === 'object') {
+        for (var wk in wpcc) {
+          if (wpcc[wk] && typeof wpcc[wk].serializedExperimentFlags === 'string') {
+            wpcc[wk].serializedExperimentFlags = patchSerializedFlags(wpcc[wk].serializedExperimentFlags);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  try {
+    if (window.ytcfg) {
+      if (window.ytcfg.data_) applyYtcfgPatches(window.ytcfg.data_);
+      if (typeof window.ytcfg.set === 'function' && !window.ytcfg.__ttExpWrapped) {
+        var origYtcfgSet = window.ytcfg.set;
+        window.ytcfg.set = function () {
+          try {
+            if (arguments[0] && typeof arguments[0] === 'object') applyYtcfgPatches(arguments[0]);
+          } catch (_) {}
+          var res = origYtcfgSet.apply(this, arguments);
+          try { if (this && this.data_) applyYtcfgPatches(this.data_); } catch (_) {}
+          return res;
+        };
+        window.ytcfg.__ttExpWrapped = true;
+      }
+    }
+  } catch (_) {}
+
+  // 4. Hook both JSON.parse and Response.prototype.json to tune live playerConfig & preconnect media CDN
+  function patchParsedPayload(res) {
+    try {
+      if (res && typeof res === 'object') {
+        var sd = res.streamingData;
+        if (sd && typeof sd === 'object') {
+          var sampleUrl = sd.serverAbrStreamingUrl ||
+            (Array.isArray(sd.adaptiveFormats) && sd.adaptiveFormats[0] && sd.adaptiveFormats[0].url);
+          if (typeof sampleUrl === 'string' && sampleUrl.indexOf('http') === 0) {
+            try { addPreconnect(new URL(sampleUrl).origin); } catch (_) {}
+          }
+        }
+        var pc = res.playerConfig;
+        if (pc && typeof pc === 'object') {
+          var vd = res.videoDetails;
+          var isLive = !!(vd && vd.isLive);
+          if (pc.webPlayerConfig && typeof pc.webPlayerConfig === 'object') {
+            pc.webPlayerConfig.enableProximaLowLatency = true;
+          }
+          if (isLive) {
+            if (pc.livePlayerConfig && typeof pc.livePlayerConfig === 'object') {
+              pc.livePlayerConfig.isLiveHeadPlayable = true;
+            }
+            state.patchedResponses++;
+          }
+        }
+      }
+    } catch (_) {}
+    return res;
+  }
+
+  try {
+    var prevJsonParse = JSON.parse;
+    JSON.parse = function () {
+      return patchParsedPayload(prevJsonParse.apply(this, arguments));
+    };
+  } catch (_) {}
+
+  try {
+    if (window.Response && Response.prototype && typeof Response.prototype.json === 'function' && !Response.prototype.__ttExpJson) {
+      var origRespJson = Response.prototype.json;
+      Response.prototype.json = function () {
+        return origRespJson.apply(this, arguments).then(patchParsedPayload);
+      };
+      Response.prototype.__ttExpJson = true;
+    }
+  } catch (_) {}
+
+  // 5. Intelligent Adaptive Live Auto-Catch-Up Controller
+  var cachedPlayer = null;
+  var cachedVideo = null;
+  var hookedVideo = null;
+  var lastRebufferAt = 0;
+  var lastVideoSwitchAt = 0;
+  var weChangedRate = false;
+  var lastTimeUpdateTime = 0;
+  var manualDvrHold = false;
+
+  function getPlayer() {
+    if (cachedPlayer && cachedPlayer.isConnected) return cachedPlayer;
+    cachedPlayer = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+    return cachedPlayer;
+  }
+
+  function getVideo() {
+    if (cachedVideo && cachedVideo.isConnected) return cachedVideo;
+    cachedVideo = document.querySelector('video');
+    if (cachedVideo && cachedVideo !== hookedVideo) {
+      hookedVideo = cachedVideo;
+      try {
+        hookedVideo.addEventListener('emptied', function () {
+          manualDvrHold = false;
+          lastTimeUpdateTime = 0;
+          lastVideoSwitchAt = Date.now();
+        }, true);
+        hookedVideo.addEventListener('loadstart', function () {
+          manualDvrHold = false;
+          lastTimeUpdateTime = 0;
+          lastVideoSwitchAt = Date.now();
+        }, true);
+        hookedVideo.addEventListener('waiting', function () {
+          lastRebufferAt = Date.now();
+          if (weChangedRate) {
+            state.rebufferBackoffs++;
+            try { hookedVideo.playbackRate = getBaseSpeed(); } catch (_) {}
+            weChangedRate = false;
+            state.catchupActive = false;
+          }
+        }, true);
+        hookedVideo.addEventListener('seeking', function () {
+          var vct = hookedVideo.currentTime || 0;
+          if (Date.now() - lastVideoSwitchAt > 3500 && hookedVideo.readyState >= 2 && lastTimeUpdateTime > 0 && lastTimeUpdateTime - vct > 12) {
+            manualDvrHold = true;
+          }
+          lastTimeUpdateTime = vct;
+        }, true);
+      } catch (_) {}
+    }
+    return cachedVideo;
+  }
+
+  function restoreBaseRate(v, reason) {
+    var base = getBaseSpeed();
+    if (v && weChangedRate && Math.abs((v.playbackRate || 1) - base) > 0.002) {
+      try { v.playbackRate = base; } catch (_) {}
+    }
+    weChangedRate = false;
+    state.catchupActive = false;
+    state.lastRate = v ? v.playbackRate : base;
+    state.lastReason = reason;
+  }
+
+  function refreshStreamMeta(p, vid) {
+    state.lastVideoId = vid;
+    state.lastSegDur = 5;
+    state.lastLatencyClass = 'NORMAL';
+    manualDvrHold = false;
+    lastTimeUpdateTime = 0;
+    lastVideoSwitchAt = Date.now();
+    try {
+      var pr = p.getPlayerResponse && p.getPlayerResponse();
+      var vd = pr && pr.videoDetails;
+      if (vd && vd.latencyClass) state.lastLatencyClass = String(vd.latencyClass);
+    } catch (_) {}
+    try {
+      if (typeof p.getDebugText === 'function') {
+        var dbg = safeParseJson(p.getDebugText(true));
+        if (dbg) {
+          if (dbg.segduration) state.lastSegDur = Number(dbg.segduration) || 5;
+          if (dbg.latency_class) state.lastLatencyClass = String(dbg.latency_class);
+        }
+      }
+    } catch (_) {}
+  }
+
+  function parseNumeric(val, samples) {
+    if (typeof val === 'string') {
+      var n = parseFloat(val);
+      if (isFinite(n)) return n;
+    } else if (typeof val === 'number' && isFinite(val)) {
+      return val;
+    }
+    if (Array.isArray(samples) && samples.length) {
+      var last = samples[samples.length - 1];
+      if (typeof last === 'number' && isFinite(last)) return last;
+    }
+    return NaN;
+  }
+
+  setInterval(function () {
+    var p = getPlayer();
+    var v = getVideo();
+    if (!p || !v) return;
+
+    var baseSpeed = getBaseSpeed();
+    if (!isDefaultSpeed(baseSpeed)) {
+      restoreBaseRate(v, 'user-custom-speed');
+      return;
+    }
+
+    var pState = typeof p.getPlayerState === 'function' ? p.getPlayerState() : -1;
+    if (pState === 3) {
+      lastRebufferAt = Date.now();
+      if (weChangedRate) state.rebufferBackoffs++;
+      restoreBaseRate(v, 'buffering');
+      return;
+    }
+    if (pState !== 1) {
+      if (weChangedRate) restoreBaseRate(v, 'not-playing');
+      return;
+    }
+
+    var pr = null;
+    try { pr = p.getPlayerResponse && p.getPlayerResponse(); } catch (_) {}
+    var vd = pr && pr.videoDetails;
+    if (!vd || !vd.isLive) {
+      manualDvrHold = false;
+      restoreBaseRate(v, 'vod');
+      return;
+    }
+
+    var vid = vd.videoId || '';
+    if (vid && vid !== state.lastVideoId) {
+      refreshStreamMeta(p, vid);
+    }
+    lastTimeUpdateTime = v.currentTime || 0;
+
+    if (Date.now() - lastRebufferAt < 8000) {
+      restoreBaseRate(v, 'rebuffer-cooldown');
+      return;
+    }
+
+    var st = null;
+    try { st = p.getStatsForNerds && p.getStatsForNerds(); } catch (_) {}
+    if (!st) return;
+
+    var ll = parseNumeric(st.live_latency_secs || st.live_latency_seconds, st.live_latency_samples);
+    var bh = parseNumeric(st.buffer_health_seconds, st.buffer_health_samples);
+    state.lastLl = isFinite(ll) ? Math.round(ll * 100) / 100 : null;
+    state.lastBh = isFinite(bh) ? Math.round(bh * 100) / 100 : null;
+
+    if (!isFinite(ll) || !isFinite(bh)) return;
+
+    var isHead = typeof p.isAtLiveHead === 'function' ? !!p.isAtLiveHead() : true;
+    if (manualDvrHold || (!isHead && ll > 75)) {
+      if (ll <= 6.5) {
+        manualDvrHold = false;
+      } else {
+        restoreBaseRate(v, 'manual-dvr');
+        return;
+      }
+    }
+
+    var lc = state.lastLatencyClass || 'NORMAL';
+    var sd = state.lastSegDur || 5;
+    var safeBh = Math.max(3.6, sd * 0.72);
+    var entryBh = Math.max(5.3, sd + 0.3);
+    var targetLl = Math.max(5.5, sd * 1.1);
+    if (lc.indexOf('ULTRA') >= 0 || sd <= 1.5) {
+      safeBh = 1.2;
+      entryBh = 2.2;
+      targetLl = 2.0;
+    } else if (lc.indexOf('LOW') >= 0 || sd <= 2.5) {
+      safeBh = 1.8;
+      entryBh = 3.2;
+      targetLl = 3.2;
+    }
+
+    var headroom = bh - safeBh;
+    var excess = ll - targetLl;
+
+    if (headroom <= 0.05) {
+      restoreBaseRate(v, 'low-buffer-guard');
+      return;
+    }
+
+    if (state.catchupActive) {
+      if (excess <= 0.4 || headroom <= 0.15) {
+        restoreBaseRate(v, 'at-target');
+        return;
+      }
+    } else {
+      if (excess < 1.2 || bh < entryBh) {
+        restoreBaseRate(v, 'at-target');
+        return;
+      }
+    }
+
+    var desiredRate = 1.06;
+    if (excess > 5.0 && headroom > 3.5) {
+      desiredRate = 1.18;
+    } else if (excess > 2.2 && headroom > 1.8) {
+      desiredRate = 1.12;
+    } else if (excess > 1.2 && headroom > 0.8) {
+      desiredRate = 1.07;
+    }
+
+    try { v.preservesPitch = true; } catch (_) {}
+    if (Math.abs((v.playbackRate || 1) - desiredRate) > 0.005) {
+      try { v.playbackRate = desiredRate; } catch (_) {}
+    }
+    if (!state.catchupActive) state.catchupActivations++;
+    state.catchupActive = true;
+    weChangedRate = true;
+    state.lastRate = desiredRate;
+    state.lastReason = 'catching-up';
+  }, 1200);
+})();
+"""
+
+if args.variant == "experimental":
+    code = code + "\n" + exp_stage1 + "\n"
+
+out_path = args.output
+po_bundle = (repo_root / "scripts" / "web_po.min.js").read_text(encoding="utf-8")
+fallback = (repo_root / "scripts" / "vp9_fallback.js").read_text(encoding="utf-8")
+quality = (repo_root / "scripts" / "quality_formats.js").read_text(encoding="utf-8")
+quality_runtime = "\n(function(){if(window.__ttQualityController)return;\n" + quality + "\nwindow.__ttQualityController=window.TTQualityFormats.create(window);window.__ttQualityController.installMenu();\n})();\n"
+runtime = "\n(function(){if(window.__ttVp9Fallback)return;\n" + po_bundle + "\nwindow.TTWebPo=TTWebPo;\n" + fallback + "\n})();\n"
+with open(out_path, "w", encoding="utf-8", newline="\n") as f:
+    policy = (repo_root / "scripts" / "l1" / "src" / "bitrate-policy.js").read_text(encoding="utf-8")
+    f.write(header + "\n" + policy + "\n" + quality_runtime + runtime + code)
 
 print("Built clean u.js:", os.path.getsize(out_path))
