@@ -1158,6 +1158,8 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     return NaN;
   }
 
+  try { console.warn('[TTLive] init', state.version); } catch (_) {}
+
   setInterval(function () {
     var p = getPlayer();
     var v = getVideo();
@@ -1169,7 +1171,7 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
       return;
     }
 
-    var pState = typeof p.getPlayerState === 'function' ? p.getPlayerState() : -1;
+    var pState = typeof p.getPlayerState === 'function' ? p.getPlayerState() : (v.paused ? 2 : 1);
     if (pState === 3) {
       lastRebufferAt = Date.now();
       if (weChangedRate) state.rebufferBackoffs++;
@@ -1186,8 +1188,12 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     var vd = pr && pr.videoDetails;
     var vdata = null;
     try { vdata = p.getVideoData && p.getVideoData(); } catch (_) {}
+    var st = null;
+    try { st = p.getStatsForNerds && p.getStatsForNerds(); } catch (_) {}
+
     var vid = (vd && vd.videoId) || (vdata && vdata.video_id) || '';
-    var isLive = !!(vd && vd.isLive) || !!(vdata && vdata.isLive) || !!(vid && state.liveVideoIds[vid]);
+    var hasStatsLive = !!(st && (st.live_latency_secs != null || st.live_latency_seconds != null || st.live_latency != null || st.liveLatency != null || st.live_mode != null || st.liveMode != null));
+    var isLive = !!(vd && vd.isLive) || !!(vdata && (vdata.isLive || vdata.is_live)) || !!(vid && state.liveVideoIds[vid]) || hasStatsLive || (v.duration === Infinity);
     if (!isLive) {
       manualDvrHold = false;
       restoreBaseRate(v, 'vod');
@@ -1205,18 +1211,15 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
       return;
     }
 
-    var st = null;
-    try { st = p.getStatsForNerds && p.getStatsForNerds(); } catch (_) {}
-
-    var ll = st ? parseNumeric(st.live_latency_secs || st.live_latency_seconds, st.live_latency_samples) : NaN;
-    var bh = st ? parseNumeric(st.buffer_health_seconds, st.buffer_health_samples) : NaN;
+    var ll = st ? parseNumeric(st.live_latency_secs || st.live_latency_seconds || st.live_latency || st.liveLatency, st.live_latency_samples) : NaN;
+    var bh = st ? parseNumeric(st.buffer_health_seconds || st.buffer_health_secs || st.buffer_health || st.bufferHealth, st.buffer_health_samples) : NaN;
     if (!isFinite(ll) || !isFinite(bh)) {
       try {
         if (typeof p.getDebugText === 'function') {
           var dbgMetrics = safeParseJson(p.getDebugText(true));
           if (dbgMetrics) {
-            if (!isFinite(ll)) ll = parseNumeric(dbgMetrics.rawlivelatency || dbgMetrics.livelatency);
-            if (!isFinite(bh)) bh = parseNumeric(dbgMetrics.vbu || dbgMetrics.bufferhealth);
+            if (!isFinite(ll)) ll = parseNumeric(dbgMetrics.rawlivelatency || dbgMetrics.livelatency || dbgMetrics.live_latency);
+            if (!isFinite(bh)) bh = parseNumeric(dbgMetrics.vbu || dbgMetrics.bufferhealth || dbgMetrics.buffer_health);
           }
         }
       } catch (_) {}
@@ -1237,7 +1240,7 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
 
     if (!window.__ttLiveLogAt || Date.now() - window.__ttLiveLogAt > 10000) {
       window.__ttLiveLogAt = Date.now();
-      try { console.info('[TTLive]', vid, 'lc=' + state.lastLatencyClass, 'll=' + state.lastLl, 'bh=' + state.lastBh, 'rate=' + (v.playbackRate || 1), 'reason=' + state.lastReason); } catch (_) {}
+      try { console.warn('[TTLive]', vid, 'lc=' + state.lastLatencyClass, 'll=' + state.lastLl, 'bh=' + state.lastBh, 'rate=' + (v.playbackRate || 1), 'reason=' + state.lastReason, 'stKeys=' + (st ? Object.keys(st).join(',') : 'none')); } catch (_) {}
     }
 
     if (!isFinite(ll) || !isFinite(bh)) return;
