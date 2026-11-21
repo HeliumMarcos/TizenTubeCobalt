@@ -562,17 +562,17 @@ exp_stage1 = r"""
 
     var lc = state.lastLatencyClass || 'NORMAL';
     var sd = state.lastSegDur || 5;
-    var safeBh = Math.max(3.6, sd * 0.72);
-    var entryBh = Math.max(5.3, sd + 0.3);
-    var targetLl = Math.max(5.5, sd * 1.1);
+    var safeBh = Math.max(2.5, sd * 0.55);
+    var entryBh = Math.max(3.8, sd * 0.8);
+    var targetLl = Math.max(4.0, sd * 0.9);
     if (lc.indexOf('ULTRA') >= 0 || sd <= 1.5) {
-      safeBh = 1.2;
-      entryBh = 2.2;
-      targetLl = 2.0;
+      safeBh = 1.0;
+      entryBh = 1.8;
+      targetLl = 1.6;
     } else if (lc.indexOf('LOW') >= 0 || sd <= 2.5) {
-      safeBh = 1.8;
-      entryBh = 3.2;
-      targetLl = 3.2;
+      safeBh = 1.5;
+      entryBh = 2.4;
+      targetLl = 2.5;
     }
 
     var headroom = bh - safeBh;
@@ -583,7 +583,7 @@ exp_stage1 = r"""
       return;
     }
 
-    if (ll > 18 && isHead && !manualDvrHold && bh >= entryBh && Date.now() - lastSeekJumpAt > 45000 && typeof p.seekTo === 'function') {
+    if (ll > 12 && isHead && !manualDvrHold && bh >= entryBh && Date.now() - lastSeekJumpAt > 30000 && typeof p.seekTo === 'function') {
       lastSeekJumpAt = Date.now();
       restoreBaseRate(v, 'seek-live-head');
       try { p.seekTo(Infinity, true); } catch (_) {}
@@ -596,18 +596,20 @@ exp_stage1 = r"""
         return;
       }
     } else {
-      if (excess < 1.2 || bh < entryBh) {
+      if (excess < 1.0 || bh < entryBh) {
         restoreBaseRate(v, 'at-target');
         return;
       }
     }
 
     var desiredRate = 1.06;
-    if (excess > 5.0 && headroom > 3.5) {
+    if (excess > 4.0 && headroom > 4.0) {
+      desiredRate = 1.25;
+    } else if (excess > 4.0 && headroom > 2.5) {
       desiredRate = 1.18;
-    } else if (excess > 2.2 && headroom > 1.8) {
+    } else if (excess > 2.0 && headroom > 1.5) {
       desiredRate = 1.12;
-    } else if (excess > 1.2 && headroom > 0.8) {
+    } else if (excess > 1.0 && headroom > 0.6) {
       desiredRate = 1.07;
     }
 
@@ -624,8 +626,7 @@ exp_stage1 = r"""
 })();
 """
 
-if args.variant == "experimental":
-    code = code + "\n" + exp_stage1 + "\n"
+code = code + "\n" + exp_stage1 + "\n"
 
 out_path = args.output
 po_bundle = (repo_root / "scripts" / "web_po.min.js").read_text(encoding="utf-8")
