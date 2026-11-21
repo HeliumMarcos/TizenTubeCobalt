@@ -158,8 +158,9 @@ exp_stage1 = r"""
   window.__ttExpStage1Loaded = true;
 
   var state = window.__ttExpStage1 = {
-    version: 'exp-stage1-v1',
+    version: 'exp-stage1-v2',
     patchedResponses: 0,
+    liveVideoIds: Object.create(null),
     preconnectHosts: [],
     catchupActive: false,
     catchupActivations: 0,
@@ -356,6 +357,7 @@ exp_stage1 = r"""
             pc.webPlayerConfig.enableProximaLowLatency = true;
           }
           if (isLive) {
+            if (vd && vd.videoId) state.liveVideoIds[vd.videoId] = String(vd.latencyClass || 'NORMAL');
             if (pc.livePlayerConfig && typeof pc.livePlayerConfig === 'object') {
               pc.livePlayerConfig.isLiveHeadPlayable = true;
             }
@@ -512,15 +514,19 @@ exp_stage1 = r"""
     var pr = null;
     try { pr = p.getPlayerResponse && p.getPlayerResponse(); } catch (_) {}
     var vd = pr && pr.videoDetails;
-    if (!vd || !vd.isLive) {
+    var vdata = null;
+    try { vdata = p.getVideoData && p.getVideoData(); } catch (_) {}
+    var vid = (vd && vd.videoId) || (vdata && vdata.video_id) || '';
+    var isLive = !!(vd && vd.isLive) || !!(vdata && vdata.isLive) || !!(vid && state.liveVideoIds[vid]);
+    if (!isLive) {
       manualDvrHold = false;
       restoreBaseRate(v, 'vod');
       return;
     }
 
-    var vid = vd.videoId || '';
     if (vid && vid !== state.lastVideoId) {
       refreshStreamMeta(p, vid);
+      if (state.liveVideoIds[vid]) state.lastLatencyClass = state.liveVideoIds[vid];
     }
     lastTimeUpdateTime = v.currentTime || 0;
 
@@ -545,8 +551,24 @@ exp_stage1 = r"""
         }
       } catch (_) {}
     }
+    if (!isFinite(bh) && v.buffered && v.buffered.length) {
+      try {
+        var ct = v.currentTime || 0;
+        for (var bi = 0; bi < v.buffered.length; bi++) {
+          if (ct >= v.buffered.start(bi) - 0.5 && ct <= v.buffered.end(bi) + 0.5) {
+            bh = Math.max(0, v.buffered.end(bi) - ct);
+            break;
+          }
+        }
+      } catch (_) {}
+    }
     state.lastLl = isFinite(ll) ? Math.round(ll * 100) / 100 : null;
     state.lastBh = isFinite(bh) ? Math.round(bh * 100) / 100 : null;
+
+    if (!window.__ttLiveLogAt || Date.now() - window.__ttLiveLogAt > 10000) {
+      window.__ttLiveLogAt = Date.now();
+      try { console.info('[TTLive]', vid, 'lc=' + state.lastLatencyClass, 'll=' + state.lastLl, 'bh=' + state.lastBh, 'rate=' + (v.playbackRate || 1), 'reason=' + state.lastReason); } catch (_) {}
+    }
 
     if (!isFinite(ll) || !isFinite(bh)) return;
 
@@ -581,6 +603,22 @@ exp_stage1 = r"""
     if (headroom <= 0.05) {
       restoreBaseRate(v, 'low-buffer-guard');
       return;
+    }
+
+    if (bh > safeBh + 5.0 && ll > targetLl + 5.0 && isHead && !manualDvrHold && Date.now() - lastSeekJumpAt > 20000) {
+      var jumpSec = Math.min(bh - (safeBh + 1.5), ll - targetLl);
+      if (jumpSec > 2.5) {
+        lastSeekJumpAt = Date.now();
+        restoreBaseRate(v, 'in-buffer-jump');
+        try {
+          if (typeof p.seekTo === 'function' && typeof p.getCurrentTime === 'function') {
+            p.seekTo(p.getCurrentTime() + jumpSec, true);
+          } else {
+            v.currentTime = (v.currentTime || 0) + jumpSec;
+          }
+        } catch (_) {}
+        return;
+      }
     }
 
     if (ll > 12 && isHead && !manualDvrHold && bh >= entryBh && Date.now() - lastSeekJumpAt > 30000 && typeof p.seekTo === 'function') {
